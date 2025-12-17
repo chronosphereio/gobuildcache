@@ -129,26 +129,28 @@ func (s *S3) Put(actionID, outputID []byte, body io.Reader, bodySize int64) (str
 // Get retrieves an object from S3.
 func (s *S3) Get(actionID []byte) ([]byte, string, int64, *time.Time, bool, error) {
 	key := s.actionIDToKey(actionID)
+	diskPath := s.actionIDToLocalPath(actionID)
 
-	// Try to get object metadata from S3
-	headInput := &s3.HeadObjectInput{
+	// Get object from S3 (no need for separate HEAD request)
+	getInput := &s3.GetObjectInput{
 		Bucket: aws.String(s.bucket),
 		Key:    aws.String(key),
 	}
 
-	headOutput, err := s.client.HeadObject(s.ctx, headInput)
+	result, err := s.client.GetObject(s.ctx, getInput)
 	if err != nil {
 		// Check if it's a not found error
 		if s.isNotFoundError(err) {
 			return nil, "", 0, nil, true, nil
 		}
-		return nil, "", 0, nil, true, fmt.Errorf("failed to check S3 object: %w", err)
+		return nil, "", 0, nil, true, fmt.Errorf("failed to get S3 object: %w", err)
 	}
+	defer result.Body.Close()
 
-	// Parse metadata
-	outputIDHex := headOutput.Metadata["outputid"]
-	sizeStr := headOutput.Metadata["size"]
-	timeStr := headOutput.Metadata["time"]
+	// Parse metadata from GET response
+	outputIDHex := result.Metadata["outputid"]
+	sizeStr := result.Metadata["size"]
+	timeStr := result.Metadata["time"]
 
 	outputID, err := hex.DecodeString(outputIDHex)
 	if err != nil {
@@ -166,12 +168,23 @@ func (s *S3) Get(actionID []byte) ([]byte, string, int64, *time.Time, bool, erro
 	}
 	putTime := time.Unix(putTimeUnix, 0)
 
-	// Check if we have the file locally
-	diskPath := s.actionIDToLocalPath(actionID)
+	// Download to local file if it doesn't exist
 	if _, err := os.Stat(diskPath); os.IsNotExist(err) {
-		// Download from S3 to local temp file
-		if err := s.downloadFromS3(key, diskPath); err != nil {
-			return nil, "", 0, nil, true, fmt.Errorf("failed to download from S3: %w", err)
+		if err := os.MkdirAll(filepath.Dir(diskPath), 0755); err != nil {
+			return nil, "", 0, nil, true, fmt.Errorf("failed to create local directory: %w", err)
+		}
+
+		file, err := os.Create(diskPath)
+		if err != nil {
+			return nil, "", 0, nil, true, fmt.Errorf("failed to create local file: %w", err)
+		}
+		defer file.Close()
+
+		// Copy from S3 to local file
+		_, err = io.Copy(file, result.Body)
+		if err != nil {
+			os.Remove(diskPath)
+			return nil, "", 0, nil, true, fmt.Errorf("failed to write local file: %w", err)
 		}
 	}
 
@@ -262,40 +275,6 @@ func (s *S3) actionIDToKey(actionID []byte) string {
 func (s *S3) actionIDToLocalPath(actionID []byte) string {
 	hexID := hex.EncodeToString(actionID)
 	return filepath.Join(s.tmpDir, hexID)
-}
-
-// downloadFromS3 downloads an object from S3 to a local file.
-func (s *S3) downloadFromS3(key, localPath string) error {
-	getInput := &s3.GetObjectInput{
-		Bucket: aws.String(s.bucket),
-		Key:    aws.String(key),
-	}
-
-	result, err := s.client.GetObject(s.ctx, getInput)
-	if err != nil {
-		return fmt.Errorf("failed to get object from S3: %w", err)
-	}
-	defer result.Body.Close()
-
-	// Create local file
-	if err := os.MkdirAll(filepath.Dir(localPath), 0755); err != nil {
-		return fmt.Errorf("failed to create local directory: %w", err)
-	}
-
-	file, err := os.Create(localPath)
-	if err != nil {
-		return fmt.Errorf("failed to create local file: %w", err)
-	}
-	defer file.Close()
-
-	// Copy from S3 to local file
-	_, err = io.Copy(file, result.Body)
-	if err != nil {
-		os.Remove(localPath)
-		return fmt.Errorf("failed to write local file: %w", err)
-	}
-
-	return nil
 }
 
 // isNotFoundError checks if an error is a "not found" error from S3.

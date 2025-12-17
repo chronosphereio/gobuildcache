@@ -12,6 +12,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"gobuildcache/backends"
 )
 
 // Cmd represents a cache command type.
@@ -47,7 +49,7 @@ type Response struct {
 
 // CacheProg implements the GOCACHEPROG protocol.
 type CacheProg struct {
-	backend       CacheBackend
+	backend       backends.Backend
 	reader        *bufio.Reader
 	writer        *bufio.Writer
 	writerLock    sync.Mutex
@@ -62,7 +64,7 @@ type CacheProg struct {
 }
 
 // NewCacheProg creates a new cache program instance.
-func NewCacheProg(backend CacheBackend, debug bool) *CacheProg {
+func NewCacheProg(backend backends.Backend, debug bool) *CacheProg {
 	return &CacheProg{
 		backend:       backend,
 		reader:        bufio.NewReader(os.Stdin),

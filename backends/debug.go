@@ -1,4 +1,4 @@
-package main
+package backends
 
 import (
 	"encoding/hex"
@@ -8,22 +8,22 @@ import (
 	"time"
 )
 
-// DebugBackend wraps any CacheBackend and adds debug logging.
+// Debug wraps any Backend and adds debug logging.
 // This allows any backend implementation to have debug logging without
 // coupling the debug logic to the backend implementation.
-type DebugBackend struct {
-	backend CacheBackend
+type Debug struct {
+	backend Backend
 }
 
-// NewDebugBackend creates a new debug wrapper around an existing backend.
-func NewDebugBackend(backend CacheBackend) *DebugBackend {
-	return &DebugBackend{
+// NewDebug creates a new debug wrapper around an existing backend.
+func NewDebug(backend Backend) *Debug {
+	return &Debug{
 		backend: backend,
 	}
 }
 
 // Put stores an object in the cache with debug logging.
-func (d *DebugBackend) Put(actionID, outputID []byte, body io.Reader, bodySize int64) (string, error) {
+func (d *Debug) Put(actionID, outputID []byte, body io.Reader, bodySize int64) (string, error) {
 	fmt.Fprintf(os.Stderr, "[DEBUG] Put: actionID=%s, outputID=%s, size=%d\n",
 		hex.EncodeToString(actionID), hex.EncodeToString(outputID), bodySize)
 
@@ -39,7 +39,7 @@ func (d *DebugBackend) Put(actionID, outputID []byte, body io.Reader, bodySize i
 }
 
 // Get retrieves an object from the cache with debug logging.
-func (d *DebugBackend) Get(actionID []byte) ([]byte, string, int64, *time.Time, bool, error) {
+func (d *Debug) Get(actionID []byte) ([]byte, string, int64, *time.Time, bool, error) {
 	fmt.Fprintf(os.Stderr, "[DEBUG] Get: actionID=%s\n", hex.EncodeToString(actionID))
 
 	outputID, diskPath, size, putTime, miss, err := d.backend.Get(actionID)
@@ -60,7 +60,7 @@ func (d *DebugBackend) Get(actionID []byte) ([]byte, string, int64, *time.Time, 
 }
 
 // Close performs cleanup operations with debug logging.
-func (d *DebugBackend) Close() error {
+func (d *Debug) Close() error {
 	fmt.Fprintf(os.Stderr, "[DEBUG] Close: closing backend\n")
 
 	err := d.backend.Close()
@@ -73,7 +73,7 @@ func (d *DebugBackend) Close() error {
 }
 
 // Clear removes all entries from the cache with debug logging.
-func (d *DebugBackend) Clear() error {
+func (d *Debug) Clear() error {
 	fmt.Fprintf(os.Stderr, "[DEBUG] Clear: clearing cache\n")
 
 	err := d.backend.Clear()
@@ -86,3 +86,4 @@ func (d *DebugBackend) Clear() error {
 	fmt.Fprintf(os.Stderr, "[DEBUG] Clear: cache cleared successfully\n")
 	return nil
 }
+

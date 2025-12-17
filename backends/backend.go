@@ -1,13 +1,13 @@
-package main
+package backends
 
 import (
 	"io"
 	"time"
 )
 
-// CacheBackend defines the interface for cache storage backends.
+// Backend defines the interface for cache storage backends.
 // Implementations can be swapped to use different storage mechanisms.
-type CacheBackend interface {
+type Backend interface {
 	// Put stores an object in the cache.
 	// actionID is the cache key, outputID is stored with the body,
 	// body is the content to store, and bodySize is the size in bytes.

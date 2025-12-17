@@ -1,4 +1,4 @@
-package main
+package backends
 
 import (
 	"bytes"
@@ -17,8 +17,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
 
-// S3Backend implements CacheBackend using AWS S3.
-type S3Backend struct {
+// S3 implements Backend using AWS S3.
+type S3 struct {
 	client    *s3.Client
 	bucket    string
 	prefix    string
@@ -27,11 +27,11 @@ type S3Backend struct {
 	awsConfig aws.Config
 }
 
-// NewS3Backend creates a new S3-based cache backend.
+// NewS3 creates a new S3-based cache backend.
 // bucket is the S3 bucket name where cache files will be stored.
 // prefix is an optional prefix for all S3 keys (e.g., "cache/" or "").
 // tmpDir is the local directory for downloading files (for Go to access).
-func NewS3Backend(bucket, prefix, tmpDir string) (*S3Backend, error) {
+func NewS3(bucket, prefix, tmpDir string) (*S3, error) {
 	ctx := context.Background()
 
 	// Load AWS config from environment/credentials
@@ -50,7 +50,7 @@ func NewS3Backend(bucket, prefix, tmpDir string) (*S3Backend, error) {
 		return nil, fmt.Errorf("failed to create temp directory: %w", err)
 	}
 
-	backend := &S3Backend{
+	backend := &S3{
 		client:    client,
 		bucket:    bucket,
 		prefix:    prefix,
@@ -71,7 +71,7 @@ func NewS3Backend(bucket, prefix, tmpDir string) (*S3Backend, error) {
 }
 
 // Put stores an object in S3.
-func (s *S3Backend) Put(actionID, outputID []byte, body io.Reader, bodySize int64) (string, error) {
+func (s *S3) Put(actionID, outputID []byte, body io.Reader, bodySize int64) (string, error) {
 	key := s.actionIDToKey(actionID)
 
 	// Read the body into a buffer (needed for S3 SDK)
@@ -127,7 +127,7 @@ func (s *S3Backend) Put(actionID, outputID []byte, body io.Reader, bodySize int6
 }
 
 // Get retrieves an object from S3.
-func (s *S3Backend) Get(actionID []byte) ([]byte, string, int64, *time.Time, bool, error) {
+func (s *S3) Get(actionID []byte) ([]byte, string, int64, *time.Time, bool, error) {
 	key := s.actionIDToKey(actionID)
 
 	// Try to get object metadata from S3
@@ -184,14 +184,14 @@ func (s *S3Backend) Get(actionID []byte) ([]byte, string, int64, *time.Time, boo
 }
 
 // Close performs cleanup operations.
-func (s *S3Backend) Close() error {
+func (s *S3) Close() error {
 	// Optionally clean up temp files
 	// We'll leave them for now as they might be useful
 	return nil
 }
 
 // Clear removes all entries from the cache in S3.
-func (s *S3Backend) Clear() error {
+func (s *S3) Clear() error {
 	// List all objects with the prefix
 	listInput := &s3.ListObjectsV2Input{
 		Bucket: aws.String(s.bucket),
@@ -252,7 +252,7 @@ func (s *S3Backend) Clear() error {
 }
 
 // actionIDToKey converts an actionID to an S3 key.
-func (s *S3Backend) actionIDToKey(actionID []byte) string {
+func (s *S3) actionIDToKey(actionID []byte) string {
 	hexID := hex.EncodeToString(actionID)
 	if s.prefix != "" {
 		return s.prefix + hexID
@@ -261,13 +261,13 @@ func (s *S3Backend) actionIDToKey(actionID []byte) string {
 }
 
 // actionIDToLocalPath converts an actionID to a local file path.
-func (s *S3Backend) actionIDToLocalPath(actionID []byte) string {
+func (s *S3) actionIDToLocalPath(actionID []byte) string {
 	hexID := hex.EncodeToString(actionID)
 	return filepath.Join(s.tmpDir, hexID)
 }
 
 // downloadFromS3 downloads an object from S3 to a local file.
-func (s *S3Backend) downloadFromS3(key, localPath string) error {
+func (s *S3) downloadFromS3(key, localPath string) error {
 	getInput := &s3.GetObjectInput{
 		Bucket: aws.String(s.bucket),
 		Key:    aws.String(key),
@@ -301,7 +301,7 @@ func (s *S3Backend) downloadFromS3(key, localPath string) error {
 }
 
 // isNotFoundError checks if an error is a "not found" error from S3.
-func (s *S3Backend) isNotFoundError(err error) bool {
+func (s *S3) isNotFoundError(err error) bool {
 	if err == nil {
 		return false
 	}
@@ -310,3 +310,4 @@ func (s *S3Backend) isNotFoundError(err error) bool {
 	return bytes.Contains([]byte(errMsg), []byte("NotFound")) ||
 		bytes.Contains([]byte(errMsg), []byte("NoSuchKey"))
 }
+

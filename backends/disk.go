@@ -1,4 +1,4 @@
-package main
+package backends
 
 import (
 	"encoding/hex"
@@ -10,26 +10,26 @@ import (
 	"time"
 )
 
-// DiskBackend implements CacheBackend using the local file system.
-type DiskBackend struct {
+// Disk implements Backend using the local file system.
+type Disk struct {
 	baseDir string
 	// mu      sync.RWMutex
 }
 
-// NewDiskBackend creates a new disk-based cache backend.
+// NewDisk creates a new disk-based cache backend.
 // baseDir is the directory where cache files will be stored.
-func NewDiskBackend(baseDir string) (*DiskBackend, error) {
+func NewDisk(baseDir string) (*Disk, error) {
 	if err := os.MkdirAll(baseDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create cache directory: %w", err)
 	}
 
-	return &DiskBackend{
+	return &Disk{
 		baseDir: baseDir,
 	}, nil
 }
 
 // Put stores an object in the cache.
-func (d *DiskBackend) Put(actionID, outputID []byte, body io.Reader, bodySize int64) (string, error) {
+func (d *Disk) Put(actionID, outputID []byte, body io.Reader, bodySize int64) (string, error) {
 	// d.mu.Lock()
 	// defer d.mu.Unlock()
 	time.Sleep(10 * time.Millisecond)
@@ -77,7 +77,7 @@ func (d *DiskBackend) Put(actionID, outputID []byte, body io.Reader, bodySize in
 }
 
 // Get retrieves an object from the cache.
-func (d *DiskBackend) Get(actionID []byte) ([]byte, string, int64, *time.Time, bool, error) {
+func (d *Disk) Get(actionID []byte) ([]byte, string, int64, *time.Time, bool, error) {
 	// d.mu.RLock()
 	// defer d.mu.RUnlock()
 
@@ -130,13 +130,13 @@ func (d *DiskBackend) Get(actionID []byte) ([]byte, string, int64, *time.Time, b
 }
 
 // Close performs cleanup operations.
-func (d *DiskBackend) Close() error {
+func (d *Disk) Close() error {
 	// No cleanup needed for disk backend
 	return nil
 }
 
 // Clear removes all entries from the cache.
-func (d *DiskBackend) Clear() error {
+func (d *Disk) Clear() error {
 	// d.mu.Lock()
 	// defer d.mu.Unlock()
 
@@ -162,13 +162,14 @@ func (d *DiskBackend) Clear() error {
 }
 
 // actionIDToPath converts an actionID to a file path.
-func (d *DiskBackend) actionIDToPath(actionID []byte) string {
+func (d *Disk) actionIDToPath(actionID []byte) string {
 	hexID := hex.EncodeToString(actionID)
 	return filepath.Join(d.baseDir, hexID)
 }
 
 // metadataPath returns the path to the metadata file for an actionID.
-func (d *DiskBackend) metadataPath(actionID []byte) string {
+func (d *Disk) metadataPath(actionID []byte) string {
 	hexID := hex.EncodeToString(actionID)
 	return filepath.Join(d.baseDir, hexID+".meta")
 }
+

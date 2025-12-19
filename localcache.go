@@ -11,9 +11,9 @@ import (
 	"time"
 )
 
-// LocalCache manages the local disk cache where Go build tools access cached files.
+// localCache manages the local disk cache where Go build tools access cached files.
 // It handles writing, reading, and metadata management for cached entries.
-type LocalCache struct {
+type localCache struct {
 	cacheDir string
 	logger   *slog.Logger
 }
@@ -25,33 +25,33 @@ type localCacheMetadata struct {
 	PutTime  time.Time
 }
 
-// NewLocalCache creates a new local cache instance.
+// newLocalCache creates a new local cache instance.
 // cacheDir is the directory where cached files will be stored.
-func NewLocalCache(cacheDir string, logger *slog.Logger) (*LocalCache, error) {
+func newLocalCache(cacheDir string, logger *slog.Logger) (*localCache, error) {
 	// Ensure cache directory exists
 	if err := os.MkdirAll(cacheDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create cache directory: %w", err)
 	}
 
-	return &LocalCache{
+	return &localCache{
 		cacheDir: cacheDir,
 		logger:   logger,
 	}, nil
 }
 
 // actionIDToPath converts an actionID to a local cache file path.
-func (lc *LocalCache) actionIDToPath(actionID []byte) string {
+func (lc *localCache) actionIDToPath(actionID []byte) string {
 	hexID := hex.EncodeToString(actionID)
 	return filepath.Join(lc.cacheDir, hexID)
 }
 
 // metadataPath returns the path to the metadata file for an actionID.
-func (lc *LocalCache) metadataPath(actionID []byte) string {
+func (lc *localCache) metadataPath(actionID []byte) string {
 	return lc.actionIDToPath(actionID) + ".meta"
 }
 
 // writeMetadata writes metadata for a cache entry.
-func (lc *LocalCache) writeMetadata(actionID []byte, meta localCacheMetadata) error {
+func (lc *localCache) writeMetadata(actionID []byte, meta localCacheMetadata) error {
 	metaPath := lc.metadataPath(actionID)
 
 	// Format: outputID:hex\nsize:num\ntime:unix\n
@@ -77,7 +77,7 @@ func (lc *LocalCache) writeMetadata(actionID []byte, meta localCacheMetadata) er
 
 // readMetadata reads metadata for a cache entry.
 // Returns an error if metadata doesn't exist or is corrupted.
-func (lc *LocalCache) readMetadata(actionID []byte) (*localCacheMetadata, error) {
+func (lc *localCache) readMetadata(actionID []byte) (*localCacheMetadata, error) {
 	metaPath := lc.metadataPath(actionID)
 
 	data, err := os.ReadFile(metaPath)
@@ -122,7 +122,7 @@ func (lc *LocalCache) readMetadata(actionID []byte) (*localCacheMetadata, error)
 
 // Write atomically writes data from a reader to the local cache.
 // Returns the absolute path to the cached file.
-func (lc *LocalCache) Write(actionID []byte, body io.Reader) (string, error) {
+func (lc *localCache) write(actionID []byte, body io.Reader) (string, error) {
 	diskPath := lc.actionIDToPath(actionID)
 
 	// Create a temporary file in the same directory for atomic write
@@ -158,9 +158,9 @@ func (lc *LocalCache) Write(actionID []byte, body io.Reader) (string, error) {
 
 // WriteWithMetadata writes data and metadata to the local cache.
 // Returns the absolute path to the cached file.
-func (lc *LocalCache) WriteWithMetadata(actionID []byte, body io.Reader, meta localCacheMetadata) (string, error) {
+func (lc *localCache) writeWithMetadata(actionID []byte, body io.Reader, meta localCacheMetadata) (string, error) {
 	// Write data
-	diskPath, err := lc.Write(actionID, body)
+	diskPath, err := lc.write(actionID, body)
 	if err != nil {
 		return "", err
 	}
@@ -178,7 +178,7 @@ func (lc *LocalCache) WriteWithMetadata(actionID []byte, body io.Reader, meta lo
 
 // Check checks if a file exists in the local cache and returns its metadata.
 // Returns nil if not found, and logs a warning if metadata is missing/corrupted.
-func (lc *LocalCache) Check(actionID []byte) *localCacheMetadata {
+func (lc *localCache) check(actionID []byte) *localCacheMetadata {
 	diskPath := lc.actionIDToPath(actionID)
 	if _, err := os.Stat(diskPath); err != nil {
 		// File doesn't exist in cache
@@ -200,7 +200,7 @@ func (lc *LocalCache) Check(actionID []byte) *localCacheMetadata {
 
 // GetPath returns the absolute path for an actionID in the local cache.
 // Does not check if the file actually exists.
-func (lc *LocalCache) GetPath(actionID []byte) string {
+func (lc *localCache) getPath(actionID []byte) string {
 	diskPath := lc.actionIDToPath(actionID)
 	absPath, err := filepath.Abs(diskPath)
 	if err != nil {

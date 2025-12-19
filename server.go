@@ -55,10 +55,10 @@ type Response struct {
 // It manages a local disk cache that Go build tools access directly,
 // and uses a backend for distributed/persistent storage.
 type CacheProg struct {
-	backend backends.Backend
-	*LocalCache
-	reader *bufio.Reader
-	writer struct {
+	backend    backends.Backend
+	localCache *localCache
+	reader     *bufio.Reader
+	writer     struct {
 		sync.Mutex
 		w *bufio.Writer
 	}
@@ -100,14 +100,14 @@ func NewCacheProg(backend backends.Backend, cacheDir string, debug bool) (*Cache
 	}))
 
 	// Create local cache
-	localCache, err := NewLocalCache(cacheDir, logger)
+	localCache, err := newLocalCache(cacheDir, logger)
 	if err != nil {
 		return nil, err
 	}
 
 	cp := &CacheProg{
 		backend:    backend,
-		LocalCache: localCache,
+		localCache: localCache,
 		reader:     bufio.NewReader(os.Stdin),
 		debug:      debug,
 		logger:     logger,
@@ -277,7 +277,7 @@ func (cp *CacheProg) HandleRequest(req *Request) (Response, error) {
 				Size:     req.BodySize,
 				PutTime:  time.Now(),
 			}
-			diskPath, err := cp.WriteWithMetadata(req.ActionID, bytes.NewReader(bodyData), meta)
+			diskPath, err := cp.localCache.writeWithMetadata(req.ActionID, bytes.NewReader(bodyData), meta)
 			if err != nil {
 				return nil, fmt.Errorf("failed to write to local cache: %w", err)
 			}
@@ -323,9 +323,9 @@ func (cp *CacheProg) HandleRequest(req *Request) (Response, error) {
 		key := "get:" + hex.EncodeToString(req.ActionID)
 		v, err, shared := cp.sfGroup.Do(key, func() (interface{}, error) {
 			// Check local cache first
-			if meta := cp.Check(req.ActionID); meta != nil {
+			if meta := cp.localCache.check(req.ActionID); meta != nil {
 				// Local cache hit with metadata
-				diskPath := cp.GetPath(req.ActionID)
+				diskPath := cp.localCache.getPath(req.ActionID)
 
 				return &getResult{
 					outputID: meta.OutputID,
@@ -356,7 +356,7 @@ func (cp *CacheProg) HandleRequest(req *Request) (Response, error) {
 				Size:     size,
 				PutTime:  *putTime,
 			}
-			diskPath, err := cp.WriteWithMetadata(req.ActionID, body, meta)
+			diskPath, err := cp.localCache.writeWithMetadata(req.ActionID, body, meta)
 			if err != nil {
 				cp.logger.Warn("failed to write to local cache after backend hit",
 					"actionID", hex.EncodeToString(req.ActionID),

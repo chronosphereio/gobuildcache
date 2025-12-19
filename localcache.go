@@ -14,7 +14,7 @@ import (
 // localCache manages the local disk cache where Go build tools access cached files.
 // It handles writing, reading, and metadata management for cached entries.
 type localCache struct {
-	cacheDir string
+	cacheDir string // Absolute path to cache directory
 	logger   *slog.Logger
 }
 
@@ -33,8 +33,15 @@ func newLocalCache(cacheDir string, logger *slog.Logger) (*localCache, error) {
 		return nil, fmt.Errorf("failed to create cache directory: %w", err)
 	}
 
+	// Convert to absolute path once at initialization
+	// This avoids repeated filepath.Abs() calls later
+	absCacheDir, err := filepath.Abs(cacheDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get absolute path: %w", err)
+	}
+
 	return &localCache{
-		cacheDir: cacheDir,
+		cacheDir: absCacheDir,
 		logger:   logger,
 	}, nil
 }
@@ -148,12 +155,8 @@ func (lc *localCache) write(actionID []byte, body io.Reader) (string, error) {
 		return "", fmt.Errorf("failed to rename cache file: %w", err)
 	}
 
-	absPath, err := filepath.Abs(diskPath)
-	if err != nil {
-		return diskPath, nil // fallback to relative path
-	}
-
-	return absPath, nil
+	// diskPath is already absolute (cacheDir is absolute)
+	return diskPath, nil
 }
 
 // WriteWithMetadata writes data and metadata to the local cache.
@@ -179,19 +182,23 @@ func (lc *localCache) writeWithMetadata(actionID []byte, body io.Reader, meta lo
 // Check checks if a file exists in the local cache and returns its metadata.
 // Returns nil if not found, and logs a warning if metadata is missing/corrupted.
 func (lc *localCache) check(actionID []byte) *localCacheMetadata {
-	diskPath := lc.actionIDToPath(actionID)
-	if _, err := os.Stat(diskPath); err != nil {
-		// File doesn't exist in cache
-		return nil
-	}
-
-	// Read metadata
+	// Try to read metadata directly (avoids extra Stat syscall)
+	// If the data file doesn't exist, the metadata file likely won't either
 	meta, err := lc.readMetadata(actionID)
 	if err != nil {
-		// File exists but metadata is missing or corrupted
-		lc.logger.Warn("local cache file exists but metadata is missing/corrupted",
-			"actionID", hex.EncodeToString(actionID),
-			"error", err)
+		if os.IsNotExist(err) {
+			// Neither data nor metadata exists - this is a cache miss
+			return nil
+		}
+		// Metadata is missing or corrupted but data file might exist
+		// Check if data file exists
+		diskPath := lc.actionIDToPath(actionID)
+		if _, statErr := os.Stat(diskPath); statErr == nil {
+			// Data file exists but metadata is missing/corrupted
+			lc.logger.Warn("local cache file exists but metadata is missing/corrupted",
+				"actionID", hex.EncodeToString(actionID),
+				"error", err)
+		}
 		return nil
 	}
 
@@ -201,10 +208,6 @@ func (lc *localCache) check(actionID []byte) *localCacheMetadata {
 // GetPath returns the absolute path for an actionID in the local cache.
 // Does not check if the file actually exists.
 func (lc *localCache) getPath(actionID []byte) string {
-	diskPath := lc.actionIDToPath(actionID)
-	absPath, err := filepath.Abs(diskPath)
-	if err != nil {
-		return diskPath
-	}
-	return absPath
+	// Since cacheDir is already absolute, the path is already absolute
+	return lc.actionIDToPath(actionID)
 }

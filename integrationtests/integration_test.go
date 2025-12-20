@@ -65,6 +65,7 @@ func TestCacheIntegration(t *testing.T) {
 		"GOCACHEPROG="+binaryPath,
 		"BACKEND_TYPE=disk",
 		"DEBUG=false",
+		"LOCK_TYPE=memory",
 		"CACHE_DIR="+cacheDir)
 
 	var firstRunOutput bytes.Buffer
@@ -91,6 +92,7 @@ func TestCacheIntegration(t *testing.T) {
 		"GOCACHEPROG="+binaryPath,
 		"BACKEND_TYPE=disk",
 		"DEBUG=false",
+		"LOCK_TYPE=memory",
 		"CACHE_DIR="+cacheDir)
 
 	var secondRunOutput bytes.Buffer

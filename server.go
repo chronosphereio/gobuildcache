@@ -567,12 +567,13 @@ func (cp *CacheProg) Run() error {
 		wg.Add(1)
 		go func(r *Request) {
 			defer wg.Done()
+			start := time.Now()
 			resp, err := cp.HandleRequest(r)
 			if err != nil {
 				requestLogger.Error("failed to handle request in backend", "command", req.Command, "error", err)
 				resp.Err = err.Error()
 			} else {
-				requestLogger.Debug("command handled in backend")
+				requestLogger.Debug("command handled in backend", "duration", time.Since(start))
 			}
 			if err := cp.SendResponse(resp); err != nil {
 				select {

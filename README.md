@@ -3,7 +3,6 @@
 TODO: Do we need to handle failed PUTs? I.E clean up if we fail to write and/or checksumming.
 TODO: Actually use HandleRequestWithRetries instead of HandleRequest.
 TODO: Move async_backend.go to backends package
-TODO: Track bytes written/read.
 TODO: Actually use async backend.
 TODO: Rename to goremotecache.
 TODO: Compression

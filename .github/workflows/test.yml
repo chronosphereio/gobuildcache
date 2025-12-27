@@ -33,7 +33,6 @@ jobs:
           AWS_ENDPOINT_URL_IAM: https://iam.storage.dev
           AWS_REGION: auto
           GOCACHEPROG: ./builds/gobuildcache
-          DEBUG: true
-        run: make test
+        run:  make test
 
 

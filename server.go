@@ -16,9 +16,9 @@ import (
 	"time"
 
 	"github.com/pierrec/lz4/v4"
-	"github.com/richardartoul/gobuildcache/backends"
-	"github.com/richardartoul/gobuildcache/locking"
-	"github.com/richardartoul/gobuildcache/metrics"
+	"github.com/richardartoul/gobuildcache/pkg/backends"
+	"github.com/richardartoul/gobuildcache/pkg/locking"
+	"github.com/richardartoul/gobuildcache/pkg/metrics"
 )
 
 const (

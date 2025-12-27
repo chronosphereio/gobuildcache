@@ -57,21 +57,21 @@ func main() {
 }
 
 func runServerCommand() {
-	serverFlags := flag.NewFlagSet("server", flag.ExitOnError)
-
-	// Get defaults from environment variables
-	debugDefault := getEnvBool("DEBUG", false)
-	printStatsDefault := getEnvBool("PRINT_STATS", true)
-	backendDefault := getEnv("BACKEND_TYPE", getEnv("BACKEND", "disk"))
-	lockTypeDefault := getEnv("LOCK_TYPE", "fslock")
-	lockDirDefault := getEnv("LOCK_DIR", filepath.Join(os.TempDir(), "gobuildcache", "locks"))
-	cacheDirDefault := getEnv("CACHE_DIR", filepath.Join(os.TempDir(), "gobuildcache", "cache"))
-	s3BucketDefault := getEnv("S3_BUCKET", "")
-	s3PrefixDefault := getEnv("S3_PREFIX", "")
-	errorRateDefault := getEnvFloat("ERROR_RATE", 0.0)
-	compressionDefault := getEnvBool("COMPRESSION", true)
-	asyncBackendDefault := getEnvBool("ASYNC_BACKEND", true)
-
+	// Get defaults from environment variables.
+	var (
+		serverFlags         = flag.NewFlagSet("server", flag.ExitOnError)
+		debugDefault        = getEnvBool("DEBUG", false)
+		printStatsDefault   = getEnvBool("PRINT_STATS", true)
+		backendDefault      = getEnv("BACKEND_TYPE", getEnv("BACKEND", "disk"))
+		lockTypeDefault     = getEnv("LOCK_TYPE", "fslock")
+		lockDirDefault      = getEnv("LOCK_DIR", filepath.Join(os.TempDir(), "gobuildcache", "locks"))
+		cacheDirDefault     = getEnv("CACHE_DIR", filepath.Join(os.TempDir(), "gobuildcache", "cache"))
+		s3BucketDefault     = getEnv("S3_BUCKET", "")
+		s3PrefixDefault     = getEnv("S3_PREFIX", "")
+		errorRateDefault    = getEnvFloat("ERROR_RATE", 0.0)
+		compressionDefault  = getEnvBool("COMPRESSION", true)
+		asyncBackendDefault = getEnvBool("ASYNC_BACKEND", true)
+	)
 	serverFlags.BoolVar(&debug, "debug", debugDefault, "Enable debug logging to stderr (env: DEBUG)")
 	serverFlags.BoolVar(&printStats, "stats", printStatsDefault, "Print cache statistics on exit (env: PRINT_STATS)")
 	serverFlags.StringVar(&backendType, "backend", backendDefault, "Backend type: disk (local only), s3 (env: BACKEND_TYPE)")
@@ -117,15 +117,15 @@ func runServerCommand() {
 }
 
 func runClearCommand() {
-	clearFlags := flag.NewFlagSet("clear", flag.ExitOnError)
-
-	// Get defaults from environment variables
-	debugDefault := getEnvBool("DEBUG", false)
-	backendDefault := getEnv("BACKEND_TYPE", getEnv("BACKEND", "disk"))
-	cacheDirDefault := getEnv("CACHE_DIR", filepath.Join(os.TempDir(), "gobuildcache", "cache"))
-	s3BucketDefault := getEnv("S3_BUCKET", "")
-	s3PrefixDefault := getEnv("S3_PREFIX", "")
-
+	// Get defaults from environment variables.
+	var (
+		clearFlags      = flag.NewFlagSet("clear", flag.ExitOnError)
+		debugDefault    = getEnvBool("DEBUG", false)
+		backendDefault  = getEnv("BACKEND_TYPE", getEnv("BACKEND", "disk"))
+		cacheDirDefault = getEnv("CACHE_DIR", filepath.Join(os.TempDir(), "gobuildcache", "cache"))
+		s3BucketDefault = getEnv("S3_BUCKET", "")
+		s3PrefixDefault = getEnv("S3_PREFIX", "")
+	)
 	clearFlags.BoolVar(&debug, "debug", debugDefault, "Enable debug logging to stderr (env: DEBUG)")
 	clearFlags.StringVar(&backendType, "backend", backendDefault, "Backend type: disk (local only), s3 (env: BACKEND_TYPE)")
 	clearFlags.StringVar(&cacheDir, "cache-dir", cacheDirDefault, "Local cache directory (env: CACHE_DIR)")
@@ -160,12 +160,12 @@ func runClearCommand() {
 }
 
 func runClearLocalCommand() {
-	clearLocalFlags := flag.NewFlagSet("clear-local", flag.ExitOnError)
-
 	// Get defaults from environment variables
-	debugDefault := getEnvBool("DEBUG", false)
-	cacheDirDefault := getEnv("CACHE_DIR", filepath.Join(os.TempDir(), "gobuildcache", "cache"))
-
+	var (
+		clearLocalFlags = flag.NewFlagSet("clear-local", flag.ExitOnError)
+		debugDefault    = getEnvBool("DEBUG", false)
+		cacheDirDefault = getEnv("CACHE_DIR", filepath.Join(os.TempDir(), "gobuildcache", "cache"))
+	)
 	clearLocalFlags.BoolVar(&debug, "debug", debugDefault, "Enable debug logging to stderr (env: DEBUG)")
 	clearLocalFlags.StringVar(&cacheDir, "cache-dir", cacheDirDefault, "Local cache directory (env: CACHE_DIR)")
 
@@ -199,14 +199,14 @@ func runClearLocalCommand() {
 }
 
 func runClearRemoteCommand() {
-	clearRemoteFlags := flag.NewFlagSet("clear-remote", flag.ExitOnError)
-
-	// Get defaults from environment variables
-	debugDefault := getEnvBool("DEBUG", false)
-	backendDefault := getEnv("BACKEND_TYPE", getEnv("BACKEND", "disk"))
-	s3BucketDefault := getEnv("S3_BUCKET", "")
-	s3PrefixDefault := getEnv("S3_PREFIX", "")
-
+	// Get defaults from environment variables.
+	var (
+		clearRemoteFlags = flag.NewFlagSet("clear-remote", flag.ExitOnError)
+		debugDefault     = getEnvBool("DEBUG", false)
+		backendDefault   = getEnv("BACKEND_TYPE", getEnv("BACKEND", "disk"))
+		s3BucketDefault  = getEnv("S3_BUCKET", "")
+		s3PrefixDefault  = getEnv("S3_PREFIX", "")
+	)
 	clearRemoteFlags.BoolVar(&debug, "debug", debugDefault, "Enable debug logging to stderr (env: DEBUG)")
 	clearRemoteFlags.StringVar(&backendType, "backend", backendDefault, "Backend type: disk, s3 (env: BACKEND_TYPE)")
 	clearRemoteFlags.StringVar(&s3Bucket, "s3-bucket", s3BucketDefault, "S3 bucket name (required for s3 backend) (env: S3_BUCKET)")
@@ -386,7 +386,7 @@ func createBackend() (backends.Backend, error) {
 	return backend, nil
 }
 
-func createLockingGroup() (locking.Locker, error) {
+func createLockingGroup() (locking.Group, error) {
 	lockingType = strings.ToLower(lockingType)
 
 	switch lockingType {

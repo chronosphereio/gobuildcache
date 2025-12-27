@@ -47,17 +47,6 @@ func newLocalCache(cacheDir string, logger *slog.Logger) (*localCache, error) {
 	}, nil
 }
 
-// actionIDToPath converts an actionID to a local cache file path.
-func (lc *localCache) actionIDToPath(actionID []byte) string {
-	hexID := fileFormatVersion + hex.EncodeToString(actionID)
-	return filepath.Join(lc.cacheDir, hexID)
-}
-
-// metadataPath returns the path to the metadata file for an actionID.
-func (lc *localCache) metadataPath(actionID []byte) string {
-	return lc.actionIDToPath(actionID) + ".meta"
-}
-
 // writeMetadata writes metadata for a cache entry.
 func (lc *localCache) writeMetadata(actionID []byte, meta localCacheMetadata) error {
 	metaPath := lc.metadataPath(actionID)
@@ -68,13 +57,15 @@ func (lc *localCache) writeMetadata(actionID []byte, meta localCacheMetadata) er
 		meta.Size,
 		meta.PutTime.Unix())
 
-	// Write to temp file first for atomic operation
+	// Write to temp file first for atomic operation.
 	tmpPath := metaPath + ".tmp"
 	if err := os.WriteFile(tmpPath, []byte(content), 0644); err != nil {
 		return fmt.Errorf("failed to write temp metadata: %w", err)
 	}
 
-	// Atomically rename
+	// Then atomically rename. This prevents any partial metadata files
+	// from ever existing, although it increases the number of syscalls
+	// we need to perform.
 	if err := os.Rename(tmpPath, metaPath); err != nil {
 		os.Remove(tmpPath)
 		return fmt.Errorf("failed to rename metadata: %w", err)
@@ -138,7 +129,7 @@ func (lc *localCache) write(actionID []byte, body io.Reader) (string, error) {
 	tmpPath := tmpFile.Name()
 	defer os.Remove(tmpPath) // Clean up if something goes wrong
 
-	// Copy data to temp file
+	// Copy data to temp file.
 	_, err = io.Copy(tmpFile, body)
 	closeErr := tmpFile.Close()
 	if err != nil {
@@ -148,7 +139,16 @@ func (lc *localCache) write(actionID []byte, body io.Reader) (string, error) {
 		return "", fmt.Errorf("failed to close temp file: %w", closeErr)
 	}
 
-	// Atomically rename temp file to final destination
+	// Then atomically rename the temp file to the final destination.
+	// This prevents any partial cache files from ever existing, although
+	// it increases the number of syscalls we need to perform.
+	//
+	// NOTE: I'm not sure this is necessary. Even if we write a partial data
+	// file, if we don't write the metadata file, then the data file will
+	// never be observed. Similarly, there's no worry of data races because
+	// localcache.go is running with mutual exclusion over a given action ID
+	// as implemented in server.go. That said, I'm leaving this in for now
+	// because I think it's safer and probably doesn't hurt performance much.
 	if err := os.Rename(tmpPath, diskPath); err != nil {
 		return "", fmt.Errorf("failed to rename cache file: %w", err)
 	}
@@ -210,6 +210,17 @@ func (lc *localCache) check(actionID []byte) *localCacheMetadata {
 	}
 
 	return meta
+}
+
+// actionIDToPath converts an actionID to a local cache file path.
+func (lc *localCache) actionIDToPath(actionID []byte) string {
+	hexID := fileFormatVersion + hex.EncodeToString(actionID)
+	return filepath.Join(lc.cacheDir, hexID)
+}
+
+// metadataPath returns the path to the metadata file for an actionID.
+func (lc *localCache) metadataPath(actionID []byte) string {
+	return lc.actionIDToPath(actionID) + ".meta"
 }
 
 // GetPath returns the absolute path for an actionID in the local cache.

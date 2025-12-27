@@ -86,7 +86,7 @@ type CacheProg struct {
 	// filesystem itself to do the locking so it works even if there are
 	// multiple instances of the cache program running concurrently using
 	// the same cache directory.
-	locker locking.Locker
+	locker locking.Group
 
 	// Stats.
 	seenActionIDs struct {
@@ -116,7 +116,7 @@ type CacheProg struct {
 // cacheDir is the local directory where cached files are stored for Go build tools to access.
 func NewCacheProg(
 	backend backends.Backend,
-	sfGroup locking.Locker,
+	sfGroup locking.Group,
 	cacheDir string,
 	debug bool,
 	printStats bool,
@@ -707,27 +707,29 @@ func (cp *CacheProg) Run() error {
 
 	// Print statistics if enabled
 	if cp.printStats {
-		getCount := cp.getCount.Load()
-		hitCount := cp.hitCount.Load()
-		localCacheHits := cp.localCacheHits.Load()
-		backendCacheHits := cp.backendCacheHits.Load()
-		putCount := cp.putCount.Load()
-		duplicateGets := cp.duplicateGets.Load()
-		duplicatePuts := cp.duplicatePuts.Load()
-		deduplicatedGets := cp.deduplicatedGets.Load()
-		deduplicatedPuts := cp.deduplicatedPuts.Load()
-		retriedRequests := cp.retriedRequests.Load()
-		totalRetries := cp.totalRetries.Load()
-		backendBytesRead := cp.backendBytesRead.Load()
-		backendBytesWritten := cp.backendBytesWritten.Load()
-		compressionBytesIn := cp.compressionBytesIn.Load()
-		compressionBytesOut := cp.compressionBytesOut.Load()
-		decompressionBytesIn := cp.decompressionBytesIn.Load()
-		decompressionBytesOut := cp.decompressionBytesOut.Load()
-		missCount := getCount - hitCount
-		hitRate := 0.0
-		localHitRate := 0.0
-		backendHitRate := 0.0
+		var (
+			getCount              = cp.getCount.Load()
+			hitCount              = cp.hitCount.Load()
+			localCacheHits        = cp.localCacheHits.Load()
+			backendCacheHits      = cp.backendCacheHits.Load()
+			putCount              = cp.putCount.Load()
+			duplicateGets         = cp.duplicateGets.Load()
+			duplicatePuts         = cp.duplicatePuts.Load()
+			deduplicatedGets      = cp.deduplicatedGets.Load()
+			deduplicatedPuts      = cp.deduplicatedPuts.Load()
+			retriedRequests       = cp.retriedRequests.Load()
+			totalRetries          = cp.totalRetries.Load()
+			backendBytesRead      = cp.backendBytesRead.Load()
+			backendBytesWritten   = cp.backendBytesWritten.Load()
+			compressionBytesIn    = cp.compressionBytesIn.Load()
+			compressionBytesOut   = cp.compressionBytesOut.Load()
+			decompressionBytesIn  = cp.decompressionBytesIn.Load()
+			decompressionBytesOut = cp.decompressionBytesOut.Load()
+			missCount             = getCount - hitCount
+			hitRate               = 0.0
+			localHitRate          = 0.0
+			backendHitRate        = 0.0
+		)
 		if getCount > 0 {
 			hitRate = float64(hitCount) / float64(getCount) * 100
 			localHitRate = float64(localCacheHits) / float64(getCount) * 100

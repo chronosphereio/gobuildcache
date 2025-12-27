@@ -1,6 +1,5 @@
 # Go Build Cache Server
 
-TODO: Assumes ephemeral storage
 TODO: Do we need to handle failed PUTs? I.E clean up if we fail to write and/or checksumming.
 TODO: Github actions example
 TODO: Actually use HandleRequestWithRetries instead of HandleRequest.

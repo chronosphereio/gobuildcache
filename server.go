@@ -17,6 +17,7 @@ import (
 
 	"github.com/richardartoul/gobuildcache/backends"
 	"github.com/richardartoul/gobuildcache/locking"
+	"github.com/richardartoul/gobuildcache/metrics"
 )
 
 // Cmd represents a cache command type.
@@ -65,6 +66,9 @@ type CacheProg struct {
 	debug      bool
 	printStats bool
 	logger     *slog.Logger
+
+	// Latency tracking using DDSketch for quantile estimation.
+	latencyTracker *metrics.LatencyTracker
 
 	// both GET and PUT requests are modifying the filesystem to cache
 	// files (GET loading from the backend and PUT writing directly), so
@@ -122,13 +126,14 @@ func NewCacheProg(
 	}
 
 	cp := &CacheProg{
-		backend:    backend,
-		localCache: localCache,
-		reader:     bufio.NewReader(os.Stdin),
-		debug:      debug,
-		printStats: printStats,
-		logger:     logger,
-		locker:     sfGroup,
+		backend:        backend,
+		localCache:     localCache,
+		reader:         bufio.NewReader(os.Stdin),
+		debug:          debug,
+		printStats:     printStats,
+		logger:         logger,
+		locker:         sfGroup,
+		latencyTracker: metrics.NewLatencyTracker(0.01), // 1% relative accuracy
 	}
 	cp.writer.w = bufio.NewWriter(os.Stdout)
 	cp.seenActionIDs.ids = make(map[string]int)
@@ -286,6 +291,11 @@ func (cp *CacheProg) HandleRequest(req *Request) (Response, error) {
 
 // handlePut processes a PUT request.
 func (cp *CacheProg) handlePut(req *Request) (Response, error) {
+	overallStart := time.Now()
+	defer func() {
+		cp.latencyTracker.Record("put_overall", time.Since(overallStart))
+	}()
+
 	var resp Response
 	resp.ID = req.ID
 
@@ -302,7 +312,10 @@ func (cp *CacheProg) handlePut(req *Request) (Response, error) {
 	v, err := cp.locker.DoWithLock(key, func() (interface{}, error) {
 		// Someone may have cached the result already, so check the local cache first
 		// before doing anything expensive.
+		localCacheCheckStart := time.Now()
 		existingMeta := cp.localCache.check(req.ActionID)
+		cp.latencyTracker.Record("put_local_cache_check", time.Since(localCacheCheckStart))
+
 		if existingMeta != nil {
 			return &putResult{diskPath: cp.localCache.getPath(req.ActionID)}, nil
 		}
@@ -326,13 +339,20 @@ func (cp *CacheProg) handlePut(req *Request) (Response, error) {
 			Size:     req.BodySize,
 			PutTime:  time.Now(),
 		}
+
+		localCacheWriteStart := time.Now()
 		diskPath, err := cp.localCache.writeWithMetadata(req.ActionID, bytes.NewReader(bodyData), meta)
+		cp.latencyTracker.Record("put_local_cache_write", time.Since(localCacheWriteStart))
+
 		if err != nil {
 			return nil, fmt.Errorf("failed to write to local cache: %w", err)
 		}
 
 		// Store in backend
+		backendPutStart := time.Now()
 		err = cp.backend.Put(req.ActionID, req.OutputID, bytes.NewReader(bodyData), req.BodySize)
+		cp.latencyTracker.Record("put_backend", time.Since(backendPutStart))
+
 		if err != nil {
 			// Local cache is still valid even if backend fails
 			cp.logger.Warn("backend PUT failed, but local cache succeeded",
@@ -355,6 +375,11 @@ func (cp *CacheProg) handlePut(req *Request) (Response, error) {
 
 // handleGet processes a GET request.
 func (cp *CacheProg) handleGet(req *Request) (Response, error) {
+	overallStart := time.Now()
+	defer func() {
+		cp.latencyTracker.Record("get_overall", time.Since(overallStart))
+	}()
+
 	var resp Response
 	resp.ID = req.ID
 
@@ -370,7 +395,11 @@ func (cp *CacheProg) handleGet(req *Request) (Response, error) {
 	key := hex.EncodeToString(req.ActionID)
 	v, err := cp.locker.DoWithLock(key, func() (interface{}, error) {
 		// Check local cache first
-		if meta := cp.localCache.check(req.ActionID); meta != nil {
+		localCacheCheckStart := time.Now()
+		meta := cp.localCache.check(req.ActionID)
+		cp.latencyTracker.Record("get_local_cache_check", time.Since(localCacheCheckStart))
+
+		if meta != nil {
 			// Local cache hit with metadata
 			diskPath := cp.localCache.getPath(req.ActionID)
 
@@ -385,7 +414,10 @@ func (cp *CacheProg) handleGet(req *Request) (Response, error) {
 		}
 
 		// Local cache miss - get from backend
+		backendGetStart := time.Now()
 		outputID, body, size, putTime, miss, err := cp.backend.Get(req.ActionID)
+		cp.latencyTracker.Record("get_backend", time.Since(backendGetStart))
+
 		if err != nil {
 			return nil, err
 		}
@@ -399,12 +431,16 @@ func (cp *CacheProg) handleGet(req *Request) (Response, error) {
 
 		// Backend hit - write to local cache with metadata
 		defer body.Close()
-		meta := localCacheMetadata{
+		metaForWrite := localCacheMetadata{
 			OutputID: outputID,
 			Size:     size,
 			PutTime:  *putTime,
 		}
-		diskPath, err := cp.localCache.writeWithMetadata(req.ActionID, body, meta)
+
+		localCacheWriteStart := time.Now()
+		diskPath, err := cp.localCache.writeWithMetadata(req.ActionID, body, metaForWrite)
+		cp.latencyTracker.Record("get_local_cache_write", time.Since(localCacheWriteStart))
+
 		if err != nil {
 			cp.logger.Warn("failed to write to local cache after backend hit",
 				"actionID", hex.EncodeToString(req.ActionID),
@@ -658,6 +694,17 @@ func (cp *CacheProg) Run() error {
 				retriedRequests, float64(retriedRequests)/float64(totalOps)*100)
 			fmt.Fprintf(os.Stderr, "  Total retries: %d (avg %.1f retries per failed request)\n",
 				totalRetries, avgRetries)
+		}
+
+		// Print latency quantiles
+		fmt.Fprintf(os.Stderr, "\nLatency quantiles (ms):\n")
+		allStats := cp.latencyTracker.GetAllStats()
+		if len(allStats) == 0 {
+			fmt.Fprintf(os.Stderr, "  No latency data collected\n")
+		} else {
+			for _, stat := range allStats {
+				fmt.Fprintf(os.Stderr, "%s\n", stat.String())
+			}
 		}
 	}
 

@@ -1,12 +1,8 @@
-# Go Build Cache Server
-
 `gobuildcache` implements the [gocacheprog](https://pkg.go.dev/cmd/go/internal/cacheprog) interface defined by the Go compiler over a variety of storage backends, the most important of which is S3 Express One Zone (henceforth referred to as S3OZ). Its primary purpose is to accelerate CI (both compilation and tests) for large Go repositories. You can think of it as a self-hostable and OSS version of [Depot's remote cache feature](https://depot.dev/blog/go-remote-cache).
 
 Effectively, `gobuildcache` leverages S3OZ as a distributed build cache for concurrent `go build` or `go test` processes regardless of whether they're running on a single machine or distributed across a fleet of CI VMs. This dramatically improves CI performance for large Go repositories because each CI process will behave as if running with an almost completely pre-populated build cache, even if the CI process was started on a completely ephemeral VM that has never compiled code or executed tests for the repository before.
 
 `gobuildcache` is highly sensitive to the latency of the remote storage backend, so it works best when running on self-hosted runners in AWS targeting an S3 Express One Zone bucket in the same region as the self-hosted runners. That said, it doesn't have to be used that way. For example, if you're using Github's hosted runners or self-hosted runners outside of AWS, you can use a different storage solution like Tigris. See `examples/github_actions_tigris.yml` for an example of using `gobuildcache` with Tigris.
-
-`gobuildcache` is designed to use S3OZ as a remote / distributed cache, but it still writes build cache data to the local filesystem. There is no way to avoid this due to the nature of the `GOCACHEPROG` protocol implemented by the Go toolchain. As a result, CI runners using `gobuildcache` will still need some amount of ephemeral storage. Also, keep in mind that `gobuildcache` assumes ephemeral storage and never GCs or trims the local filesystem cache. See the "Preventing Cache Bloat" section for more details.
 
 # Quick Start
 

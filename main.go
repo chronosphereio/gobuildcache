@@ -23,6 +23,7 @@ var (
 	s3Prefix    string
 	s3TmpDir    string
 	errorRate   float64
+	compression bool
 )
 
 func main() {
@@ -67,6 +68,7 @@ func runServerCommand() {
 	s3BucketDefault := getEnv("S3_BUCKET", "")
 	s3PrefixDefault := getEnv("S3_PREFIX", "")
 	errorRateDefault := getEnvFloat("ERROR_RATE", 0.0)
+	compressionDefault := getEnvBool("COMPRESSION", true)
 
 	serverFlags.BoolVar(&debug, "debug", debugDefault, "Enable debug logging to stderr (env: DEBUG)")
 	serverFlags.BoolVar(&printStats, "stats", printStatsDefault, "Print cache statistics on exit (env: PRINT_STATS)")
@@ -77,6 +79,7 @@ func runServerCommand() {
 	serverFlags.StringVar(&s3Bucket, "s3-bucket", s3BucketDefault, "S3 bucket name (required for s3 backend) (env: S3_BUCKET)")
 	serverFlags.StringVar(&s3Prefix, "s3-prefix", s3PrefixDefault, "S3 key prefix (optional) (env: S3_PREFIX)")
 	serverFlags.Float64Var(&errorRate, "error-rate", errorRateDefault, "Error injection rate (0.0-1.0) for testing error handling (env: ERROR_RATE)")
+	serverFlags.BoolVar(&compression, "compression", compressionDefault, "Enable LZ4 compression for backend storage (env: COMPRESSION)")
 
 	serverFlags.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: %s [flags]\n\n", os.Args[0])
@@ -87,11 +90,12 @@ func runServerCommand() {
 		fmt.Fprintf(os.Stderr, "  DEBUG            Enable debug logging (true/false)\n")
 		fmt.Fprintf(os.Stderr, "  PRINT_STATS      Print cache statistics on exit (true/false)\n")
 		fmt.Fprintf(os.Stderr, "  BACKEND_TYPE     Backend type (disk, s3)\n")
-		fmt.Fprintf(os.Stderr, "  LOCK_TYPE      Deduplication type (memory, fslock)\n")
-		fmt.Fprintf(os.Stderr, "  LOCK_DIR  Lock directory for fslock\n")
+		fmt.Fprintf(os.Stderr, "  LOCK_TYPE        Deduplication type (memory, fslock)\n")
+		fmt.Fprintf(os.Stderr, "  LOCK_DIR         Lock directory for fslock\n")
 		fmt.Fprintf(os.Stderr, "  CACHE_DIR        Local cache directory\n")
 		fmt.Fprintf(os.Stderr, "  S3_BUCKET        S3 bucket name\n")
 		fmt.Fprintf(os.Stderr, "  S3_PREFIX        S3 key prefix\n")
+		fmt.Fprintf(os.Stderr, "  COMPRESSION      Enable LZ4 compression (true/false)\n")
 		fmt.Fprintf(os.Stderr, "\nNote: Command-line flags take precedence over environment variables.\n")
 		fmt.Fprintf(os.Stderr, "\nExamples:\n")
 		fmt.Fprintf(os.Stderr, "  # Run with disk backend using flags:\n")
@@ -273,7 +277,7 @@ func runServer() {
 		os.Exit(1)
 	}
 
-	prog, err := NewCacheProg(backend, lockingGroup, cacheDir, debug, printStats)
+	prog, err := NewCacheProg(backend, lockingGroup, cacheDir, debug, printStats, compression)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error creating cache program: %v\n", err)
 		os.Exit(1)

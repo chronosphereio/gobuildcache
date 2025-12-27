@@ -5,7 +5,6 @@ TODO: Actually use HandleRequestWithRetries instead of HandleRequest.
 TODO: Move async_backend.go to backends package
 TODO: Actually use async backend.
 TODO: Rename to goremotecache.
-TODO: Compression
 TODO: Prefix for all environment variables
 
 `gobuildcache` implements the [gocacheprog](https://pkg.go.dev/cmd/go/internal/cacheprog) interface defined by the Go compiler over a variety of storage backends, the most important of which is S3 Express One Zone (henceforth referred to as S3OZ). Its primary purpose is to accelerate CI (both compilation and tests) for large Go repositories. You can think of it as a self-hostable and O.S.S version of [Depot's remote cache feature](https://depot.dev/blog/go-remote-cache?utm_medium=kristen&utm_campaign=blog&utm_source=reddit&dub_id=cTRjiWqFlKwhwq4q).

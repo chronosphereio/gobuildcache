@@ -50,7 +50,7 @@ func newLocalCache(cacheDir string, logger *slog.Logger) (*localCache, error) {
 // actionIDToPath converts an actionID to a local cache file path.
 func (lc *localCache) actionIDToPath(actionID []byte) string {
 	hexID := hex.EncodeToString(actionID)
-	return filepath.Join(lc.cacheDir, hexID)
+	return filepath.Join(lc.cacheDir, "v2", hexID)
 }
 
 // metadataPath returns the path to the metadata file for an actionID.

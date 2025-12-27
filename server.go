@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/pierrec/lz4/v4"
 	"github.com/richardartoul/gobuildcache/backends"
 	"github.com/richardartoul/gobuildcache/locking"
 	"github.com/richardartoul/gobuildcache/metrics"
@@ -63,9 +64,10 @@ type CacheProg struct {
 		w *bufio.Writer
 	}
 
-	debug      bool
-	printStats bool
-	logger     *slog.Logger
+	debug       bool
+	printStats  bool
+	compression bool
+	logger      *slog.Logger
 
 	// Latency tracking using DDSketch for quantile estimation.
 	latencyTracker *metrics.LatencyTracker
@@ -86,19 +88,23 @@ type CacheProg struct {
 		sync.Mutex
 		ids map[string]int // Maps action ID to request count
 	}
-	duplicateGets       atomic.Int64
-	duplicatePuts       atomic.Int64
-	putCount            atomic.Int64
-	getCount            atomic.Int64
-	hitCount            atomic.Int64
-	localCacheHits      atomic.Int64
-	backendCacheHits    atomic.Int64
-	deduplicatedGets    atomic.Int64
-	deduplicatedPuts    atomic.Int64
-	retriedRequests     atomic.Int64
-	totalRetries        atomic.Int64
-	backendBytesRead    atomic.Int64 // Total bytes read from backend
-	backendBytesWritten atomic.Int64 // Total bytes written to backend
+	duplicateGets         atomic.Int64
+	duplicatePuts         atomic.Int64
+	putCount              atomic.Int64
+	getCount              atomic.Int64
+	hitCount              atomic.Int64
+	localCacheHits        atomic.Int64
+	backendCacheHits      atomic.Int64
+	deduplicatedGets      atomic.Int64
+	deduplicatedPuts      atomic.Int64
+	retriedRequests       atomic.Int64
+	totalRetries          atomic.Int64
+	backendBytesRead      atomic.Int64 // Total bytes read from backend
+	backendBytesWritten   atomic.Int64 // Total bytes written to backend
+	compressionBytesIn    atomic.Int64 // Uncompressed bytes before compression
+	compressionBytesOut   atomic.Int64 // Compressed bytes after compression
+	decompressionBytesIn  atomic.Int64 // Compressed bytes before decompression
+	decompressionBytesOut atomic.Int64 // Uncompressed bytes after decompression
 }
 
 // NewCacheProg creates a new cache program instance.
@@ -109,6 +115,7 @@ func NewCacheProg(
 	cacheDir string,
 	debug bool,
 	printStats bool,
+	compression bool,
 ) (*CacheProg, error) {
 	// Configure logger level based on debug flag
 	logLevel := slog.LevelInfo
@@ -133,6 +140,7 @@ func NewCacheProg(
 		reader:         bufio.NewReader(os.Stdin),
 		debug:          debug,
 		printStats:     printStats,
+		compression:    compression,
 		logger:         logger,
 		locker:         sfGroup,
 		latencyTracker: metrics.NewLatencyTracker(0.01), // 1% relative accuracy
@@ -249,6 +257,35 @@ func (cp *CacheProg) trackActionID(actionID []byte) bool {
 	cp.seenActionIDs.ids[actionIDStr] = count + 1
 
 	return count > 0 // It's a duplicate if we've seen it before
+}
+
+// compressData compresses data using LZ4 and returns the compressed bytes.
+func compressData(data []byte) ([]byte, error) {
+	var buf bytes.Buffer
+	writer := lz4.NewWriter(&buf)
+
+	if _, err := writer.Write(data); err != nil {
+		writer.Close()
+		return nil, fmt.Errorf("failed to write to LZ4 compressor: %w", err)
+	}
+
+	if err := writer.Close(); err != nil {
+		return nil, fmt.Errorf("failed to close LZ4 compressor: %w", err)
+	}
+
+	return buf.Bytes(), nil
+}
+
+// decompressData decompresses LZ4-compressed data.
+func decompressData(data []byte) ([]byte, error) {
+	reader := lz4.NewReader(bytes.NewReader(data))
+
+	var buf bytes.Buffer
+	if _, err := io.Copy(&buf, reader); err != nil {
+		return nil, fmt.Errorf("failed to decompress LZ4 data: %w", err)
+	}
+
+	return buf.Bytes(), nil
 }
 
 // formatBytes formats a byte count as a human-readable string.
@@ -371,9 +408,33 @@ func (cp *CacheProg) handlePut(req *Request) (Response, error) {
 			return nil, fmt.Errorf("failed to write to local cache: %w", err)
 		}
 
-		// Store in backend
+		// Store in backend (with optional compression)
 		backendPutStart := time.Now()
-		err = cp.backend.Put(req.ActionID, req.OutputID, bytes.NewReader(bodyData), req.BodySize)
+		var dataToStore []byte
+		var dataSize int64
+
+		if cp.compression && req.BodySize > 0 {
+			// Compress data for backend storage
+			compressStart := time.Now()
+			compressed, err := compressData(bodyData)
+			cp.latencyTracker.Record("put_compression", time.Since(compressStart))
+
+			if err != nil {
+				return nil, fmt.Errorf("failed to compress data: %w", err)
+			}
+
+			dataToStore = compressed
+			dataSize = int64(len(compressed))
+
+			// Track compression statistics
+			cp.compressionBytesIn.Add(req.BodySize)
+			cp.compressionBytesOut.Add(dataSize)
+		} else {
+			dataToStore = bodyData
+			dataSize = req.BodySize
+		}
+
+		err = cp.backend.Put(req.ActionID, req.OutputID, bytes.NewReader(dataToStore), dataSize)
 		cp.latencyTracker.Record("put_backend", time.Since(backendPutStart))
 
 		if err != nil {
@@ -382,8 +443,8 @@ func (cp *CacheProg) handlePut(req *Request) (Response, error) {
 				"actionID", hex.EncodeToString(req.ActionID),
 				"error", err)
 		} else {
-			// Track bytes written to backend on success
-			cp.backendBytesWritten.Add(req.BodySize)
+			// Track bytes written to backend on success (actual bytes transferred)
+			cp.backendBytesWritten.Add(dataSize)
 		}
 
 		return &putResult{diskPath: diskPath}, nil
@@ -455,19 +516,50 @@ func (cp *CacheProg) handleGet(req *Request) (Response, error) {
 			}, nil
 		}
 
-		// Backend hit - track bytes read from backend
+		// Backend hit - track bytes read from backend (compressed size)
 		cp.backendBytesRead.Add(size)
 
-		// Backend hit - write to local cache with metadata
+		// Backend hit - decompress if needed, then write to local cache with metadata
 		defer body.Close()
+
+		var dataToCache io.Reader
+		var actualSize int64
+
+		if cp.compression && size > 0 {
+			// Read compressed data from backend
+			compressedData, err := io.ReadAll(body)
+			if err != nil {
+				return nil, fmt.Errorf("failed to read compressed data from backend: %w", err)
+			}
+
+			// Decompress data
+			decompressStart := time.Now()
+			decompressed, err := decompressData(compressedData)
+			cp.latencyTracker.Record("get_decompression", time.Since(decompressStart))
+
+			if err != nil {
+				return nil, fmt.Errorf("failed to decompress data: %w", err)
+			}
+
+			// Track decompression statistics
+			cp.decompressionBytesIn.Add(size)
+			cp.decompressionBytesOut.Add(int64(len(decompressed)))
+
+			dataToCache = bytes.NewReader(decompressed)
+			actualSize = int64(len(decompressed))
+		} else {
+			dataToCache = body
+			actualSize = size
+		}
+
 		metaForWrite := localCacheMetadata{
 			OutputID: outputID,
-			Size:     size,
+			Size:     actualSize,
 			PutTime:  *putTime,
 		}
 
 		localCacheWriteStart := time.Now()
-		diskPath, err := cp.localCache.writeWithMetadata(req.ActionID, body, metaForWrite)
+		diskPath, err := cp.localCache.writeWithMetadata(req.ActionID, dataToCache, metaForWrite)
 		cp.latencyTracker.Record("get_local_cache_write", time.Since(localCacheWriteStart))
 
 		if err != nil {
@@ -482,7 +574,7 @@ func (cp *CacheProg) handleGet(req *Request) (Response, error) {
 		return &getResult{
 			outputID:       outputID,
 			diskPath:       diskPath,
-			size:           size,
+			size:           actualSize,
 			putTime:        putTime,
 			miss:           false,
 			fromLocalCache: false,
@@ -685,6 +777,10 @@ func (cp *CacheProg) Run() error {
 		totalRetries := cp.totalRetries.Load()
 		backendBytesRead := cp.backendBytesRead.Load()
 		backendBytesWritten := cp.backendBytesWritten.Load()
+		compressionBytesIn := cp.compressionBytesIn.Load()
+		compressionBytesOut := cp.compressionBytesOut.Load()
+		decompressionBytesIn := cp.decompressionBytesIn.Load()
+		decompressionBytesOut := cp.decompressionBytesOut.Load()
 		missCount := getCount - hitCount
 		hitRate := 0.0
 		localHitRate := 0.0
@@ -722,6 +818,27 @@ func (cp *CacheProg) Run() error {
 		fmt.Fprintf(os.Stderr, "  Total operations: %d\n", totalOps)
 		fmt.Fprintf(os.Stderr, "  Unique action IDs: %d\n", uniqueActionIDs)
 		fmt.Fprintf(os.Stderr, "  Total backend bytes transferred: %s\n", formatBytes(backendBytesRead+backendBytesWritten))
+
+		// Print compression statistics if compression is enabled
+		if cp.compression {
+			fmt.Fprintf(os.Stderr, "\nCompression statistics:\n")
+			if compressionBytesIn > 0 {
+				compressionRatio := float64(compressionBytesOut) / float64(compressionBytesIn) * 100
+				spaceSaved := compressionBytesIn - compressionBytesOut
+				fmt.Fprintf(os.Stderr, "  Compression (PUT): %s -> %s (%.1f%%, saved %s)\n",
+					formatBytes(compressionBytesIn), formatBytes(compressionBytesOut),
+					compressionRatio, formatBytes(spaceSaved))
+			}
+			if decompressionBytesIn > 0 {
+				decompressionRatio := float64(decompressionBytesOut) / float64(decompressionBytesIn) * 100
+				fmt.Fprintf(os.Stderr, "  Decompression (GET): %s -> %s (%.1f%% expansion)\n",
+					formatBytes(decompressionBytesIn), formatBytes(decompressionBytesOut),
+					decompressionRatio)
+			}
+			if compressionBytesIn == 0 && decompressionBytesIn == 0 {
+				fmt.Fprintf(os.Stderr, "  No compression activity (compression enabled but no data compressed/decompressed)\n")
+			}
+		}
 		if retriedRequests > 0 {
 			avgRetries := float64(totalRetries) / float64(retriedRequests)
 			fmt.Fprintf(os.Stderr, "  Retried requests: %d (%.1f%% of operations)\n",

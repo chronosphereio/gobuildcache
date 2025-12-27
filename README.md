@@ -1,27 +1,103 @@
 # Go Build Cache Server
 
-A remote caching server for Go builds that supports multiple storage backends.
+TODO: Why not S3 (too slow)
+TODO: Clear command
+TODO: Assumes ephemeral storage
+TODO: Link depot blog post
+TODO: Lifecycle policy
+
+`gobuildcache` implements the [gocacheprog](TODO: LINK) interface defined by the Go compiler over a variety of storage backends, the most important of which is S3 Express One Zone (henceforth referred to as S3OZ). Its primary purpose is to accelerate CI (both compilation and tests) for large Go repositories.
+
+Effectively, `gobuildcache` leverages S3OZ as a distributed build cache for concurrent `go build` or `go test` processes regardless of whether they're running on a single machine or distributed across a fleet of CI VMs. This dramatically improves the performance of CI for large Go repositories because every CI process will behave as if it is running with an almost completely pre-populated build cache, even if the CI process was started on a completely ephemeral VM that has never compiled code or executed tests for the repository before.
+
+This is similar in spirit to the common pattern of restoring a shared go build cache at the beginning of the CI run, and then saving the freshly updated go build cache at the beginning of the CI run so it can be restored by subsequent CI jobs. However, the approach taken by `gobuildcache` is much more efficient resulting in dramatically lower CI times (and bills) with significantly less "CI engineering" required. For more details on why the approach taken by `gobuildcache` is better, see the "Why Should I Use gobuildcache" section.
+
+# Quick Start
 
 ## Installation
-
-Install using `go install`:
 
 ```bash
 go install github.com/richardartoul/gobuildcache@latest
 ```
 
-Or clone and build manually:
+## Usage
 
 ```bash
-git clone https://github.com/richardartoul/gobuildcache.git
-cd gobuildcache
-go build
+export GOCACHEPROG=gobuildcache
+go build ./...
+go test ./...
 ```
+
+By default, `gobuildcache` uses an on-disk cache stored in your operating system's default temporary directory. This is useful testing and experimentation with `gobuildcache`, but provides no benefits over the Go compiler's built in cache which also stores cached data on locally on disk.
+
+For "production" use-cases in CI, you'll want to configure `gobuildcache` to use S3 Express One Zone, or a similarly low latency distributed backend.
+
+```bash
+export BACKEND_TYPE=s3
+export S3_BUCKET=$BUCKET_NAME
+```
+
+You'll also have to provide AWS credentials. `gobuildcaceh` embeds the AWS V2 S3 SDK so any method of providing credentials to that library will work, but the simplest is to us environment variables as demonstrated below.
+
+```bash
+export GOCACHEPROG=gobuildcache
+export BACKEND_TYPE=s3
+export S3_BUCKET=$BUCKET_NAME
+export AWS_REGION=$BUCKE_REGION
+export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY
+export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
+go build ./...
+go test ./...
+```
+
+Your credentials must have the following permissions:
+
+TODO: S3express permission
+TODO: Confirm these
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject",
+        "s3:ListBucket",
+        "s3:HeadBucket",
+        "s3:HeadObject"
+      ],
+      "Resource": [
+        "arn:aws:s3:::$BUCKET_NAME",
+        "arn:aws:s3:::$BUCKET_NAME/*"
+      ]
+    }
+  ]
+}
+```
+
+In normal circumstances you should never have to run the `gobuildcache` binary directly, it will be instead be invoked by the go compiler (hence why configuration is managed via environment variables instead of command line flags). However, the `gobuildcache` binary ships with a `clear` command that can be used to 
+
+# Configuration
+
+`gobuildcache` ships with reasonable defaults, but this section provides a complete overview of flags / environment variables that can be used to override behavior.
+
+# Why should I use gobuildcache?
+
+First, the local on-disk cache of the CI VM doesn't have to be pre-populated at once. `gobuildcache` populates it by loading the cache on the fly as the Go compiler compiles code and runs test. This makes it so you don't have to waste several precious minutes of CI time waiting for gigabytes of data to be downloaded and decompressed while CI cores sit idle. This is why S3OZ's low latency is crucial to `gobuildcache`'s design.
+
+Second, `gobuildcache` is never stale. A big problem with the common caching pattern described above is that if the P.R under test differs "significantly" from the main branch (say, because a package that many other packages depend on has been modified) then the Go toolchain will be required to compile almost every file from scratch, as well as run almost every test in the repo. Contrast that with the `gobuildcache` approach where the first commit that is pushed will incur the penalty described above, but all subsequent commits will experience extremely high cache hit ratios. One way to think about this benefit is that with the common approach, only one "branch" of the repository can be cached at any given time (usually the `main` branch), and as a result all P.Rs experience CI delays that are roughly proportional to how much they "differ" from `main`. With the `gobuildcache` approach, the cache stored in S3OZ can store a hot cache for all of the different branches and PRs in the repository at the same time. This makes cache misses significantly less likely, and reduces average CI times dramatically.
+
+Third, the `gobuildcache` approach completely obviates the need to determine how frequently to "rebuild" the shared cache tarball. This is important, because rebuilding the shared cache is expensive as it usually has to be built from a CI process running with no pre-built cache to avoid infinite cache bloat, but if its run too infrequently then CI for PRs will be slow (because they "differ" too much from the stale cached tarball).
+
+Fourth, `gobuildcache` makes parallelizing CI using commonly supported "matrix" strategies much easier and efficient. For example, consider the common pattern where unit tests are split across 4 concurrent CI jobs using Github actions matrix functionality. In this approach, each CI job runs ~ 1/4th of the unit tests in the repostitory and each CI job determines which tests its responsible for running by hashing the unit tests name and then moduloing it by the index assigned to the CI job by Github actions matrix functionality. This works great for parallelizing test execution across multiple VMs, but it presesents a huge problem for build caching. The Go build cache doesn't just cache package compilation, it also cache test execution. This is a hugely important optimization for CI because it means that if you can populate the the CI job's build cache efficiently, P.Rs that modify packages that not many other packages depend on will only have to run a small fraction of the total tests in the repository. However, generating this cache is difficult now because each CI job is only executing a fraction of the test suite, so the build cache generated by CI job 1 will result in 0 cache hits for job 2 and vice versa. As a result, CI job matrix unit now has to restore and save a build cache that is unique to its specific matrix index. This is doable, but it's annoying and requires solving a bunch of other incidental engineering challenges like making sure the cache is only ever saved from CI jobs running on the main branch, and using consistent hashing instead of modulo hashing to assign tests to CI job matrix units (because otherwise add a single test will completely shuffle the assignment of tests to CI jobs and the cache hit ratio will be terrible). All of these problems just dissapear when using the `gobuildcache` because the CI jobs behave much more like stateless, ephemeral compute while still benefitting from extremely high cache hit ratios due to the shared / distributed cache backend.
 
 ## TODOs
 
 1. Actually use HandleRequestWithRetries instead of HandleRequest.
-2. We should have writes to the backend be async so they don't slow the compiler down.
+2. Move async_backend.go to backends package
 
 ## Features
 
@@ -42,7 +118,6 @@ All configuration options can be set via **command-line flags** or **environment
 | `-cache-dir` | `CACHE_DIR` | `/tmp/gobuildcache` | Cache directory for disk backend |
 | `-s3-bucket` | `S3_BUCKET` | (none) | S3 bucket name (required for S3) |
 | `-s3-prefix` | `S3_PREFIX` | (empty) | S3 key prefix |
-| `-s3-tmp-dir` | `S3_TMP_DIR` | `/tmp/gobuildcache-s3` | Local temp directory for S3 |
 | `-debug` | `DEBUG` | `false` | Enable debug logging |
 | `-stats` | `PRINT_STATS` | `false` | Print cache statistics on exit |
 

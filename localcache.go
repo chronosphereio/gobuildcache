@@ -41,6 +41,15 @@ func newLocalCache(cacheDir string, logger *slog.Logger) (*localCache, error) {
 		return nil, fmt.Errorf("failed to get absolute path: %w", err)
 	}
 
+	// Precreate all 256 subdirectories (00-ff) to avoid syscalls during writes
+	for i := 0; i < 256; i++ {
+		subdir := fmt.Sprintf("%02x", i)
+		subdirPath := filepath.Join(absCacheDir, subdir)
+		if err := os.MkdirAll(subdirPath, 0755); err != nil {
+			return nil, fmt.Errorf("failed to create subdirectory %s: %w", subdir, err)
+		}
+	}
+
 	return &localCache{
 		cacheDir: absCacheDir,
 		logger:   logger,
@@ -121,12 +130,12 @@ func (lc *localCache) readMetadata(actionID []byte) (*localCacheMetadata, error)
 func (lc *localCache) write(actionID []byte, body io.Reader) (string, error) {
 	diskPath := lc.actionIDToPath(actionID)
 
-	// Create a temporary file in the same directory for atomic write
-	tmpFile, err := os.CreateTemp(lc.cacheDir, ".tmp-*")
+	// Write to temp file first for atomic operation.
+	tmpPath := diskPath + ".tmp"
+	tmpFile, err := os.Create(tmpPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to create temp file: %w", err)
 	}
-	tmpPath := tmpFile.Name()
 	defer os.Remove(tmpPath) // Clean up if something goes wrong
 
 	// Copy data to temp file.
@@ -213,9 +222,14 @@ func (lc *localCache) check(actionID []byte) *localCacheMetadata {
 }
 
 // actionIDToPath converts an actionID to a local cache file path.
+// Files are organized into 256 subdirectories (00-ff) based on the first byte
+// of the action ID, similar to Go's build cache structure.
 func (lc *localCache) actionIDToPath(actionID []byte) string {
-	hexID := fileFormatVersion + hex.EncodeToString(actionID)
-	return filepath.Join(lc.cacheDir, hexID)
+	hexActionID := hex.EncodeToString(actionID)
+	// Use first two hex characters (first byte) of action ID as subdirectory name
+	subdir := hexActionID[:2]
+	hexID := fileFormatVersion + hexActionID
+	return filepath.Join(lc.cacheDir, subdir, hexID)
 }
 
 // metadataPath returns the path to the metadata file for an actionID.

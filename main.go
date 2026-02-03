@@ -377,6 +377,9 @@ func createBackend() (backends.Backend, error) {
 		if debug {
 			logLevel = slog.LevelDebug
 		}
+		if quiet {
+			logLevel = slog.LevelWarn
+		}
 		logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
 			Level: logLevel,
 		}))

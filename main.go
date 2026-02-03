@@ -16,6 +16,7 @@ import (
 var (
 	debug        bool
 	printStats   bool
+	quiet        bool
 	backendType  string
 	lockingType  string
 	lockDir      string
@@ -62,6 +63,7 @@ func runServerCommand() {
 		serverFlags         = flag.NewFlagSet("server", flag.ExitOnError)
 		debugDefault        = getEnvBool("DEBUG", false)
 		printStatsDefault   = getEnvBool("PRINT_STATS", true)
+		quietDefault        = getEnvBool("QUIET", false)
 		backendDefault      = getEnv("BACKEND_TYPE", getEnv("BACKEND", "disk"))
 		lockTypeDefault     = getEnv("LOCK_TYPE", "fslock")
 		lockDirDefault      = getEnv("LOCK_DIR", filepath.Join(os.TempDir(), "gobuildcache", "locks"))
@@ -74,6 +76,7 @@ func runServerCommand() {
 	)
 	serverFlags.BoolVar(&debug, "debug", debugDefault, "Enable debug logging to stderr (env: DEBUG)")
 	serverFlags.BoolVar(&printStats, "stats", printStatsDefault, "Print cache statistics on exit (env: PRINT_STATS)")
+	serverFlags.BoolVar(&quiet, "quiet", quietDefault, "Suppress informational messages (env: QUIET)")
 	serverFlags.StringVar(&backendType, "backend", backendDefault, "Backend type: disk (local only), s3 (env: BACKEND_TYPE)")
 	serverFlags.StringVar(&lockingType, "lock-type", lockTypeDefault, "Locking type: memory (in-memory), fslock (filesystem) (env: LOCK_TYPE)")
 	serverFlags.StringVar(&lockDir, "lock-dir", lockDirDefault, "Lock directory for fslock (env: LOCK_DIR)")
@@ -92,6 +95,7 @@ func runServerCommand() {
 		fmt.Fprintf(os.Stderr, "\nEnvironment Variables:\n")
 		fmt.Fprintf(os.Stderr, "  DEBUG            Enable debug logging (true/false)\n")
 		fmt.Fprintf(os.Stderr, "  PRINT_STATS      Print cache statistics on exit (true/false)\n")
+		fmt.Fprintf(os.Stderr, "  QUIET            Suppress informational messages (true/false)\n")
 		fmt.Fprintf(os.Stderr, "  BACKEND_TYPE     Backend type (disk, s3)\n")
 		fmt.Fprintf(os.Stderr, "  LOCK_TYPE        Deduplication type (memory, fslock)\n")
 		fmt.Fprintf(os.Stderr, "  LOCK_DIR         Lock directory for fslock\n")
@@ -361,7 +365,9 @@ func createBackend() (backends.Backend, error) {
 	// Wrap with error backend if error rate is configured
 	if errorRate > 0 {
 		backend = backends.NewError(backend, errorRate)
-		fmt.Fprintf(os.Stderr, "[INFO] Error injection enabled with rate: %.2f%%\n", errorRate*100)
+		if !quiet {
+			fmt.Fprintf(os.Stderr, "[INFO] Error injection enabled with rate: %.2f%%\n", errorRate*100)
+		}
 	}
 
 	// Wrap with async backend if enabled
@@ -371,11 +377,16 @@ func createBackend() (backends.Backend, error) {
 		if debug {
 			logLevel = slog.LevelDebug
 		}
+		if quiet {
+			logLevel = slog.LevelWarn
+		}
 		logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
 			Level: logLevel,
 		}))
 		backend = backends.NewAsyncBackendWriter(backend, logger)
-		fmt.Fprintf(os.Stderr, "[INFO] Async backend writer enabled\n")
+		if !quiet {
+			fmt.Fprintf(os.Stderr, "[INFO] Async backend writer enabled\n")
+		}
 	}
 
 	// Wrap with debug backend if debug mode is enabled

@@ -53,9 +53,9 @@ func TestCacheClear(t *testing.T) {
 	firstRunCmd.Dir = workspaceDir
 	firstRunCmd.Env = append(os.Environ(),
 		"GOCACHEPROG="+binaryPath,
-		"BACKEND_TYPE=disk",
-		"DEBUG=false", // Less verbose
-		"CACHE_DIR="+cacheDir)
+		"GOBUILDCACHE_BACKEND_TYPE=disk",
+		"GOBUILDCACHE_DEBUG=false",
+		"GOBUILDCACHE_CACHE_DIR="+cacheDir)
 
 	var firstRunOutput bytes.Buffer
 	firstRunCmd.Stdout = &firstRunOutput
@@ -83,9 +83,9 @@ func TestCacheClear(t *testing.T) {
 	secondRunCmd.Dir = workspaceDir
 	secondRunCmd.Env = append(os.Environ(),
 		"GOCACHEPROG="+binaryPath,
-		"BACKEND_TYPE=disk",
-		"DEBUG=false",
-		"CACHE_DIR="+cacheDir)
+		"GOBUILDCACHE_BACKEND_TYPE=disk",
+		"GOBUILDCACHE_DEBUG=false",
+		"GOBUILDCACHE_CACHE_DIR="+cacheDir)
 
 	var secondRunOutput bytes.Buffer
 	secondRunCmd.Stdout = &secondRunOutput
@@ -148,9 +148,9 @@ func TestCacheClear(t *testing.T) {
 	thirdRunCmd.Dir = workspaceDir
 	thirdRunCmd.Env = append(os.Environ(),
 		"GOCACHEPROG="+binaryPath,
-		"BACKEND_TYPE=disk",
-		"DEBUG=false",
-		"CACHE_DIR="+cacheDir)
+		"GOBUILDCACHE_BACKEND_TYPE=disk",
+		"GOBUILDCACHE_DEBUG=false",
+		"GOBUILDCACHE_CACHE_DIR="+cacheDir)
 
 	var thirdRunOutput bytes.Buffer
 	thirdRunCmd.Stdout = &thirdRunOutput

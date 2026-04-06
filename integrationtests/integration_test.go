@@ -63,10 +63,10 @@ func TestCacheIntegration(t *testing.T) {
 	// Set environment to use disk backend when Go starts the cache program
 	firstRunCmd.Env = append(os.Environ(),
 		"GOCACHEPROG="+binaryPath,
-		"BACKEND_TYPE=disk",
-		"DEBUG=false",
-		"LOCK_TYPE=memory",
-		"CACHE_DIR="+cacheDir)
+		"GOBUILDCACHE_BACKEND_TYPE=disk",
+		"GOBUILDCACHE_DEBUG=false",
+		"GOBUILDCACHE_LOCK_TYPE=memory",
+		"GOBUILDCACHE_CACHE_DIR="+cacheDir)
 
 	var firstRunOutput bytes.Buffer
 	firstRunCmd.Stdout = &firstRunOutput
@@ -90,10 +90,10 @@ func TestCacheIntegration(t *testing.T) {
 	// Set environment to use disk backend when Go starts the cache program
 	secondRunCmd.Env = append(os.Environ(),
 		"GOCACHEPROG="+binaryPath,
-		"BACKEND_TYPE=disk",
-		"DEBUG=false",
-		"LOCK_TYPE=memory",
-		"CACHE_DIR="+cacheDir)
+		"GOBUILDCACHE_BACKEND_TYPE=disk",
+		"GOBUILDCACHE_DEBUG=false",
+		"GOBUILDCACHE_LOCK_TYPE=memory",
+		"GOBUILDCACHE_CACHE_DIR="+cacheDir)
 
 	var secondRunOutput bytes.Buffer
 	secondRunCmd.Stdout = &secondRunOutput

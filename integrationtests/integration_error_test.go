@@ -57,10 +57,10 @@ func TestCacheIntegrationErrorBackend(t *testing.T) {
 	testCmd.Dir = workspaceDir
 	testCmd.Env = append(os.Environ(),
 		"GOCACHEPROG="+binaryPath,
-		"BACKEND_TYPE=disk",
-		"CACHE_DIR="+cacheDir,
-		"ERROR_RATE="+fmt.Sprintf("%f", errorRate),
-		"DEBUG=false")
+		"GOBUILDCACHE_BACKEND_TYPE=disk",
+		"GOBUILDCACHE_CACHE_DIR="+cacheDir,
+		"GOBUILDCACHE_ERROR_RATE="+fmt.Sprintf("%f", errorRate),
+		"GOBUILDCACHE_DEBUG=false")
 
 	var testOutput bytes.Buffer
 	testCmd.Stdout = &testOutput

@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/richardartoul/gobuildcache/pkg/backends"
-	"github.com/richardartoul/gobuildcache/pkg/locking"
+	"github.com/chronosphereio/gobuildcache/pkg/backends"
+	"github.com/chronosphereio/gobuildcache/pkg/locking"
 )
 
 // Global flags

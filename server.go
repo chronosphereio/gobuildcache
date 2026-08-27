@@ -15,9 +15,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/richardartoul/gobuildcache/pkg/backends"
-	"github.com/richardartoul/gobuildcache/pkg/locking"
-	"github.com/richardartoul/gobuildcache/pkg/metrics"
+	"github.com/chronosphereio/gobuildcache/pkg/backends"
+	"github.com/chronosphereio/gobuildcache/pkg/locking"
+	"github.com/chronosphereio/gobuildcache/pkg/metrics"
 
 	"github.com/pierrec/lz4/v4"
 )

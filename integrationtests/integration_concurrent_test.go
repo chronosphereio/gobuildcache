@@ -84,12 +84,12 @@ func TestCacheIntegrationConcurrentProcesses(t *testing.T) {
 			// Use fslock for cross-process deduplication
 			cmd.Env = append(os.Environ(),
 				"GOCACHEPROG="+binaryPath,
-				"BACKEND_TYPE=disk",
-				"DEBUG=false",
-				"PRINT_STATS=true",
-				"LOCK_TYPE=fslock",
-				"LOCK_DIR="+lockDir,
-				"CACHE_DIR="+cacheDir)
+				"GOBUILDCACHE_BACKEND_TYPE=disk",
+				"GOBUILDCACHE_DEBUG=false",
+				"GOBUILDCACHE_PRINT_STATS=true",
+				"GOBUILDCACHE_LOCK_TYPE=fslock",
+				"GOBUILDCACHE_LOCK_DIR="+lockDir,
+				"GOBUILDCACHE_CACHE_DIR="+cacheDir)
 
 			cmd.Stdout = &outputs[index]
 			cmd.Stderr = &outputs[index]
@@ -126,12 +126,12 @@ func TestCacheIntegrationConcurrentProcesses(t *testing.T) {
 	secondCmd.Dir = workspaceDir
 	secondCmd.Env = append(os.Environ(),
 		"GOCACHEPROG="+binaryPath,
-		"BACKEND_TYPE=disk",
-		"DEBUG=false",
-		"PRINT_STATS=true",
-		"LOCK=fslock",
-		"LOCK_DIR="+lockDir,
-		"CACHE_DIR="+cacheDir)
+		"GOBUILDCACHE_BACKEND_TYPE=disk",
+		"GOBUILDCACHE_DEBUG=false",
+		"GOBUILDCACHE_PRINT_STATS=true",
+		"GOBUILDCACHE_LOCK_TYPE=fslock",
+		"GOBUILDCACHE_LOCK_DIR="+lockDir,
+		"GOBUILDCACHE_CACHE_DIR="+cacheDir)
 	secondCmd.Stdout = &secondBatchOutput
 	secondCmd.Stderr = &secondBatchOutput
 

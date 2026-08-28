@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"strings"
 	"testing"
@@ -8,6 +9,55 @@ import (
 	"github.com/chronosphereio/gobuildcache/pkg/backends"
 	"github.com/chronosphereio/gobuildcache/pkg/locking"
 )
+
+func TestCreateServerBackendFailure(t *testing.T) {
+	originalBackendType := backendType
+	originalFailOpen := failOpen
+	t.Cleanup(func() {
+		backendType = originalBackendType
+		failOpen = originalFailOpen
+	})
+
+	tests := []struct {
+		name            string
+		failOpen        bool
+		wantError       bool
+		wantWarning     bool
+		wantNoopBackend bool
+	}{
+		{
+			name:      "fails when fail-open is disabled",
+			failOpen:  false,
+			wantError: true,
+		},
+		{
+			name:            "uses local cache when fail-open is enabled",
+			failOpen:        true,
+			wantWarning:     true,
+			wantNoopBackend: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			backendType = "invalid"
+			failOpen = tt.failOpen
+			var stderr bytes.Buffer
+
+			backend, err := createServerBackend(&stderr)
+			if (err != nil) != tt.wantError {
+				t.Fatalf("createServerBackend() error = %v, wantError %v", err, tt.wantError)
+			}
+			if got := strings.Contains(stderr.String(), "using local cache only"); got != tt.wantWarning {
+				t.Errorf("createServerBackend() warning = %v, want %v", got, tt.wantWarning)
+			}
+			_, gotNoopBackend := backend.(*backends.Noop)
+			if gotNoopBackend != tt.wantNoopBackend {
+				t.Errorf("createServerBackend() no-op backend = %v, want %v", gotNoopBackend, tt.wantNoopBackend)
+			}
+		})
+	}
+}
 
 func TestFormatBytes(t *testing.T) {
 	tests := []struct {

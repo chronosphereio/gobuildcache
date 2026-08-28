@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -29,6 +30,7 @@ var (
 	compression  bool
 	asyncBackend bool
 	readOnly     bool
+	failOpen     bool
 )
 
 func main() {
@@ -80,6 +82,7 @@ func runServerCommand() {
 		compressionDefault  = getEnvBoolWithPrefix("COMPRESSION", true)
 		asyncBackendDefault = getEnvBoolWithPrefix("ASYNC_BACKEND", true)
 		readOnlyDefault     = getEnvBoolWithPrefix("READ_ONLY", false)
+		failOpenDefault     = getEnvBoolWithPrefix("FAIL_OPEN", false)
 	)
 	serverFlags.BoolVar(&debug, "debug", debugDefault, "Enable debug logging to stderr (env: DEBUG)")
 	serverFlags.BoolVar(&printStats, "stats", printStatsDefault, "Print cache statistics on exit (env: PRINT_STATS)")
@@ -96,6 +99,7 @@ func runServerCommand() {
 	serverFlags.BoolVar(&compression, "compression", compressionDefault, "Enable LZ4 compression for backend storage (env: COMPRESSION)")
 	serverFlags.BoolVar(&asyncBackend, "async-backend", asyncBackendDefault, "Enable async backend writer for non-blocking PUT operations (env: ASYNC_BACKEND)")
 	serverFlags.BoolVar(&readOnly, "read-only", readOnlyDefault, "Read-only mode: allow cache reads but skip writes (env: READ_ONLY)")
+	serverFlags.BoolVar(&failOpen, "fail-open", failOpenDefault, "Use the local cache when remote backend initialization fails (env: FAIL_OPEN)")
 
 	serverFlags.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: %s [flags]\n\n", os.Args[0])
@@ -119,6 +123,7 @@ func runServerCommand() {
 		fmt.Fprintf(os.Stderr, "  COMPRESSION      Enable LZ4 compression (true/false)\n")
 		fmt.Fprintf(os.Stderr, "  ASYNC_BACKEND    Enable async backend writer (true/false)\n")
 		fmt.Fprintf(os.Stderr, "  READ_ONLY        Read-only mode: allow reads, skip writes (true/false)\n")
+		fmt.Fprintf(os.Stderr, "  FAIL_OPEN        Use the local cache when remote backend initialization fails (true/false)\n")
 		fmt.Fprintf(os.Stderr, "\nNote: Command-line flags take precedence over environment variables.\n")
 		fmt.Fprintf(os.Stderr, "\nExamples:\n")
 		fmt.Fprintf(os.Stderr, "  # Run with disk backend using flags:\n")
@@ -317,15 +322,10 @@ func printHelp() {
 
 func runServer() {
 	// Create backend
-	backend, err := createBackend()
+	backend, err := createServerBackend(os.Stderr)
 	if err != nil {
-		fmt.Fprintf(
-			os.Stderr,
-			"[WARN] failed to create %s cache backend: %v; using local cache only\n",
-			backendType,
-			err,
-		)
-		backend = backends.NewNoop()
+		fmt.Fprintf(os.Stderr, "Error creating cache backend: %v\n", err)
+		os.Exit(1)
 	}
 	defer backend.Close()
 
@@ -348,6 +348,21 @@ func runServer() {
 		fmt.Fprintf(os.Stderr, "Error running cache program: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+func createServerBackend(stderr io.Writer) (backends.Backend, error) {
+	backend, err := createBackend()
+	if err == nil || !failOpen {
+		return backend, err
+	}
+
+	fmt.Fprintf(
+		stderr,
+		"[WARN] failed to create %s cache backend: %v; using local cache only\n",
+		backendType,
+		err,
+	)
+	return backends.NewNoop(), nil
 }
 
 func runClear() {

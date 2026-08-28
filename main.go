@@ -15,22 +15,22 @@ import (
 
 // Global flags
 var (
-	debug        bool
-	printStats   bool
-	quiet        bool
-	backendType  string
-	lockingType  string
-	lockDir      string
-	cacheDir     string
-	s3Bucket     string
-	s3Prefix     string
-	gcsBucket    string
-	gcsPrefix    string
-	errorRate    float64
-	compression  bool
-	asyncBackend bool
-	readOnly     bool
-	failOpen     bool
+	debug         bool
+	printStats    bool
+	quiet         bool
+	backendType   string
+	lockingType   string
+	lockDir       string
+	cacheDir      string
+	s3Bucket      string
+	s3Prefix      string
+	gcsBucket     string
+	gcsPrefix     string
+	errorRate     float64
+	compression   bool
+	asyncBackend  bool
+	readOnly      bool
+	localFallback bool
 )
 
 func main() {
@@ -66,23 +66,23 @@ func runServerCommand() {
 	// Get defaults from environment variables.
 	// All variables support both GOBUILDCACHE_<KEY> and <KEY> forms, with prefixed taking precedence.
 	var (
-		serverFlags         = flag.NewFlagSet("server", flag.ExitOnError)
-		debugDefault        = getEnvBoolWithPrefix("DEBUG", false)
-		printStatsDefault   = getEnvBoolWithPrefix("PRINT_STATS", true)
-		quietDefault        = getEnvBoolWithPrefix("QUIET", false)
-		backendDefault      = getEnvWithPrefix("BACKEND_TYPE", getEnv("BACKEND", "disk"))
-		lockTypeDefault     = getEnvWithPrefix("LOCK_TYPE", "fslock")
-		lockDirDefault      = getEnvWithPrefix("LOCK_DIR", filepath.Join(os.TempDir(), "gobuildcache", "locks"))
-		cacheDirDefault     = getEnvWithPrefix("CACHE_DIR", filepath.Join(os.TempDir(), "gobuildcache", "cache"))
-		s3BucketDefault     = getEnvWithPrefix("S3_BUCKET", "")
-		s3PrefixDefault     = getEnvWithPrefix("S3_PREFIX", "gobuildcache/")
-		gcsBucketDefault    = getEnvWithPrefix("GCS_BUCKET", "")
-		gcsPrefixDefault    = getEnvWithPrefix("GCS_PREFIX", "gobuildcache/")
-		errorRateDefault    = getEnvFloatWithPrefix("ERROR_RATE", 0.0)
-		compressionDefault  = getEnvBoolWithPrefix("COMPRESSION", true)
-		asyncBackendDefault = getEnvBoolWithPrefix("ASYNC_BACKEND", true)
-		readOnlyDefault     = getEnvBoolWithPrefix("READ_ONLY", false)
-		failOpenDefault     = getEnvBoolWithPrefix("FAIL_OPEN", false)
+		serverFlags          = flag.NewFlagSet("server", flag.ExitOnError)
+		debugDefault         = getEnvBoolWithPrefix("DEBUG", false)
+		printStatsDefault    = getEnvBoolWithPrefix("PRINT_STATS", true)
+		quietDefault         = getEnvBoolWithPrefix("QUIET", false)
+		backendDefault       = getEnvWithPrefix("BACKEND_TYPE", getEnv("BACKEND", "disk"))
+		lockTypeDefault      = getEnvWithPrefix("LOCK_TYPE", "fslock")
+		lockDirDefault       = getEnvWithPrefix("LOCK_DIR", filepath.Join(os.TempDir(), "gobuildcache", "locks"))
+		cacheDirDefault      = getEnvWithPrefix("CACHE_DIR", filepath.Join(os.TempDir(), "gobuildcache", "cache"))
+		s3BucketDefault      = getEnvWithPrefix("S3_BUCKET", "")
+		s3PrefixDefault      = getEnvWithPrefix("S3_PREFIX", "gobuildcache/")
+		gcsBucketDefault     = getEnvWithPrefix("GCS_BUCKET", "")
+		gcsPrefixDefault     = getEnvWithPrefix("GCS_PREFIX", "gobuildcache/")
+		errorRateDefault     = getEnvFloatWithPrefix("ERROR_RATE", 0.0)
+		compressionDefault   = getEnvBoolWithPrefix("COMPRESSION", true)
+		asyncBackendDefault  = getEnvBoolWithPrefix("ASYNC_BACKEND", true)
+		readOnlyDefault      = getEnvBoolWithPrefix("READ_ONLY", false)
+		localFallbackDefault = getEnvBoolWithPrefix("LOCAL_FALLBACK", false)
 	)
 	serverFlags.BoolVar(&debug, "debug", debugDefault, "Enable debug logging to stderr (env: DEBUG)")
 	serverFlags.BoolVar(&printStats, "stats", printStatsDefault, "Print cache statistics on exit (env: PRINT_STATS)")
@@ -99,7 +99,7 @@ func runServerCommand() {
 	serverFlags.BoolVar(&compression, "compression", compressionDefault, "Enable LZ4 compression for backend storage (env: COMPRESSION)")
 	serverFlags.BoolVar(&asyncBackend, "async-backend", asyncBackendDefault, "Enable async backend writer for non-blocking PUT operations (env: ASYNC_BACKEND)")
 	serverFlags.BoolVar(&readOnly, "read-only", readOnlyDefault, "Read-only mode: allow cache reads but skip writes (env: READ_ONLY)")
-	serverFlags.BoolVar(&failOpen, "fail-open", failOpenDefault, "Use the local cache when remote backend initialization fails (env: FAIL_OPEN)")
+	serverFlags.BoolVar(&localFallback, "local-fallback", localFallbackDefault, "Use the local cache when remote backend initialization fails (env: LOCAL_FALLBACK)")
 
 	serverFlags.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: %s [flags]\n\n", os.Args[0])
@@ -123,7 +123,7 @@ func runServerCommand() {
 		fmt.Fprintf(os.Stderr, "  COMPRESSION      Enable LZ4 compression (true/false)\n")
 		fmt.Fprintf(os.Stderr, "  ASYNC_BACKEND    Enable async backend writer (true/false)\n")
 		fmt.Fprintf(os.Stderr, "  READ_ONLY        Read-only mode: allow reads, skip writes (true/false)\n")
-		fmt.Fprintf(os.Stderr, "  FAIL_OPEN        Use the local cache when remote backend initialization fails (true/false)\n")
+		fmt.Fprintf(os.Stderr, "  LOCAL_FALLBACK   Use the local cache when remote backend initialization fails (true/false)\n")
 		fmt.Fprintf(os.Stderr, "\nNote: Command-line flags take precedence over environment variables.\n")
 		fmt.Fprintf(os.Stderr, "\nExamples:\n")
 		fmt.Fprintf(os.Stderr, "  # Run with disk backend using flags:\n")
@@ -352,7 +352,7 @@ func runServer() {
 
 func createServerBackend(stderr io.Writer) (backends.Backend, error) {
 	backend, err := createBackend()
-	if err == nil || !failOpen {
+	if err == nil || !localFallback {
 		return backend, err
 	}
 

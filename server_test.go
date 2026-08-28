@@ -12,27 +12,27 @@ import (
 
 func TestCreateServerBackendFailure(t *testing.T) {
 	originalBackendType := backendType
-	originalFailOpen := failOpen
+	originalLocalFallback := localFallback
 	t.Cleanup(func() {
 		backendType = originalBackendType
-		failOpen = originalFailOpen
+		localFallback = originalLocalFallback
 	})
 
 	tests := []struct {
 		name            string
-		failOpen        bool
+		localFallback   bool
 		wantError       bool
 		wantWarning     bool
 		wantNoopBackend bool
 	}{
 		{
-			name:      "fails when fail-open is disabled",
-			failOpen:  false,
-			wantError: true,
+			name:          "fails when local fallback is disabled",
+			localFallback: false,
+			wantError:     true,
 		},
 		{
-			name:            "uses local cache when fail-open is enabled",
-			failOpen:        true,
+			name:            "uses local cache when local fallback is enabled",
+			localFallback:   true,
 			wantWarning:     true,
 			wantNoopBackend: true,
 		},
@@ -41,7 +41,7 @@ func TestCreateServerBackendFailure(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			backendType = "invalid"
-			failOpen = tt.failOpen
+			localFallback = tt.localFallback
 			var stderr bytes.Buffer
 
 			backend, err := createServerBackend(&stderr)

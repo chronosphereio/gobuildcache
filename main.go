@@ -319,8 +319,13 @@ func runServer() {
 	// Create backend
 	backend, err := createBackend()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error creating cache backend: %v\n", err)
-		os.Exit(1)
+		fmt.Fprintf(
+			os.Stderr,
+			"[WARN] failed to create %s cache backend: %v; using local cache only\n",
+			backendType,
+			err,
+		)
+		backend = backends.NewNoop()
 	}
 	defer backend.Close()
 

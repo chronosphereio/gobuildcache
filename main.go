@@ -352,17 +352,17 @@ func runServer() {
 
 func createServerBackend(stderr io.Writer) (backends.Backend, error) {
 	backend, err := createBackend()
-	if err == nil || !localFallback {
-		return backend, err
+	if err != nil && localFallback {
+		fmt.Fprintf(
+			stderr,
+			"[WARN] failed to create %s cache backend: %v; using local cache only\n",
+			backendType,
+			err,
+		)
+		return backends.NewNoop(), nil
 	}
 
-	fmt.Fprintf(
-		stderr,
-		"[WARN] failed to create %s cache backend: %v; using local cache only\n",
-		backendType,
-		err,
-	)
-	return backends.NewNoop(), nil
+	return backend, err
 }
 
 func runClear() {
